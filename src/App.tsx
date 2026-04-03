@@ -1,6 +1,5 @@
-
 function App() {
-  return <div>App</div>;
+  return <div className="text-2xl text-center font-extrabold">App</div>;
 }
 
 export default App;
