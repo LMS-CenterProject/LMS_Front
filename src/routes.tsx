@@ -1,87 +1,123 @@
+// AppRouter.tsx
 import React from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
+import PublicLayout from "./layout/PublicLayout";
+import AppLayout from "./layout/AppLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { ALL_NAV_ITEMS } from "./config/navigation";
+import type { Role } from "./utils/rbac";
 
-// ─── Pages ────────────────────────────────────────────────────────────────────
 import HomePage from "./pages/Home/Homepage";
-// import LoginPage from "./pages/Auth/Loginpage";
+import AboutPage from "./pages/About/AboutPage";
+import LoginPage from "./pages/Auth/Loginpage";
 import RegisterPage from "./pages/Auth/Registerpage";
-import DashboardPage from "./pages/Dashboard/Dashboard";
-import GoogleLoginButton from "./pages/Auth/Google";
+import NotFound from "./pages/NotFound/NotFound";
+
+// ─── Layout wrappers ──────────────────────────────────────────────────────────
+
+const PublicLayoutRoute = () => (
+  <PublicLayout>
+    <Outlet />
+  </PublicLayout>
+);
+const AuthLayoutRoute = () => (
+  <PublicLayout hideNav>
+    <Outlet />
+  </PublicLayout>
+);
+const AppLayoutRoute = () => (
+  <AppLayout>
+    <Outlet />
+  </AppLayout>
+);
+
 // ─── Guards ───────────────────────────────────────────────────────────────────
 
-/** Redirect authenticated users away from auth pages */
 const GuestGuard: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <PageLoader />;
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : <Outlet />;
 };
 
-/** Protect pages that require authentication */
-const AuthGuard: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return <PageLoader />;
-  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
-};
-
-// ─── Loader ───────────────────────────────────────────────────────────────────
-
 const PageLoader: React.FC = () => (
-  <div className="min-h-screen flex items-center justify-center bg-[#0d0f14]">
+  <div className="min-h-screen flex items-center justify-center bg-white">
     <div className="flex flex-col items-center gap-4">
-      <div className="w-10 h-10 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
-      <p className="text-slate-400 text-sm tracking-widest uppercase">
-        Loading
-      </p>
+      <div className="w-10 h-10 rounded-full border-2 border-[#6d28d9] border-t-transparent animate-spin" />
+      <p className="text-gray-400 text-sm tracking-widest uppercase">Loading</p>
     </div>
   </div>
 );
 
+// ─── Group nav items by their roles key so ProtectedRoute wraps each group ───
+
+type RouteGroup = { roles: Role[] | undefined; items: typeof ALL_NAV_ITEMS };
+
+const ROUTE_GROUPS: RouteGroup[] = Object.values(
+  ALL_NAV_ITEMS.reduce<Record<string, RouteGroup>>((acc, item) => {
+    const key = JSON.stringify(item.roles ?? null);
+    if (!acc[key]) acc[key] = { roles: item.roles, items: [] };
+    acc[key].items.push(item);
+    return acc;
+  }, {}),
+);
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
-const AppRouter: React.FC = () => {
-  return (
-    <Routes>
-      {/* Public */}
+const AppRouter: React.FC = () => (
+  <Routes>
+    {/* Public */}
+    <Route element={<PublicLayoutRoute />}>
       <Route path="/" element={<HomePage />} />
+      <Route path="/about" element={<AboutPage />} />
+    </Route>
 
-      {/* Guest only (redirect if already logged in) */}
+    {/* Auth pages — guests only */}
+    <Route element={<AuthLayoutRoute />}>
       <Route element={<GuestGuard />}>
-        <Route path="/login" element={<GoogleLoginButton />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
       </Route>
+    </Route>
 
-      {/* Protected */}
-      <Route element={<AuthGuard />}>
-        <Route path="/dashboard" element={<DashboardPage />} />
-        {/* Add more protected routes here */}
-        {/* <Route path="/courses" element={<CoursesPage />} /> */}
-        {/* <Route path="/courses/:id" element={<CourseDetailPage />} /> */}
-        {/* <Route path="/profile" element={<ProfilePage />} /> */}
-      </Route>
+    {/* Protected — grouped by role, each group gets its own ProtectedRoute */}
+    <Route element={<AppLayoutRoute />}>
+      {ROUTE_GROUPS.map(({ roles, items }) => (
+        <Route
+          key={JSON.stringify(roles ?? null)}
+          element={<ProtectedRoute allowedRoles={roles} />}
+        >
+          {items.map(({ path, component: Page }) => (
+            <Route key={path} path={path} element={<Page />} />
+          ))}
+        </Route>
+      ))}
+    </Route>
 
-      {/* 404 */}
-      <Route
-        path="*"
-        element={
-          <div className="min-h-screen flex items-center justify-center bg-[#0d0f14]">
-            <div className="text-center space-y-4">
-              <h1 className="text-8xl font-bold text-amber-400/30 font-display">
-                404
-              </h1>
-              <p className="text-slate-400">Page not found</p>
-              <a
-                href="/"
-                className="inline-block text-amber-400 hover:underline text-sm"
-              >
-                ← Back to home
-              </a>
-            </div>
+    {/* 403 */}
+    <Route
+      path="/unauthorized"
+      element={
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center space-y-4">
+            <h1 className="text-8xl font-black text-gray-200">403</h1>
+            <p className="text-gray-500 font-medium">
+              You don't have access to this page.
+            </p>
+            <a
+              href="/dashboard"
+              className="inline-block text-[#6d28d9] hover:underline font-semibold text-sm"
+            >
+              ← Back to dashboard
+            </a>
           </div>
-        }
-      />
-    </Routes>
-  );
-};
+        </div>
+      }
+    />
+
+    {/* 404 */}
+    <Route path="*" element={<NotFound />} />
+  </Routes>
+);
 
 export default AppRouter;
