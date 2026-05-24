@@ -7,12 +7,17 @@ import AppLayout from "./layout/AppLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { ALL_NAV_ITEMS } from "./config/navigation";
 import type { Role } from "./utils/rbac";
+import CourseGuard from "./components/CourseGuard";
 
 import HomePage from "./pages/Home/Homepage";
 import AboutPage from "./pages/About/AboutPage";
 import LoginPage from "./pages/Auth/Loginpage";
 import RegisterPage from "./pages/Auth/Registerpage";
 import NotFound from "./pages/NotFound/NotFound";
+
+// Dynamic content pages
+import SectionsPage from "./pages/ContentPage/SectionsPage";
+import LessonsPage from "./pages/ContentPage/LessonsPage";
 
 // ─── Layout wrappers ──────────────────────────────────────────────────────────
 
@@ -49,7 +54,7 @@ const PageLoader: React.FC = () => (
   </div>
 );
 
-// ─── Group nav items by their roles key so ProtectedRoute wraps each group ───
+// ─── Group nav items by their roles key ──────────────────────────────────────
 
 type RouteGroup = { roles: Role[] | undefined; items: typeof ALL_NAV_ITEMS };
 
@@ -80,8 +85,23 @@ const AppRouter: React.FC = () => (
       </Route>
     </Route>
 
-    {/* Protected — grouped by role, each group gets its own ProtectedRoute */}
+    {/* Protected — includes dynamic content routes */}
     <Route element={<AppLayoutRoute />}>
+      {/* Dynamic course content routes (accessible to all authenticated users) */}
+      <Route element={<ProtectedRoute />}>
+        <Route element={<CourseGuard />}>
+          <Route
+            path="/courses/:courseId/sections"
+            element={<SectionsPage />}
+          />
+          <Route
+            path="/courses/:courseId/sections/:sectionId/lessons"
+            element={<LessonsPage />}
+          />
+        </Route>
+      </Route>
+
+      {/* Nav-config-driven routes grouped by role */}
       {ROUTE_GROUPS.map(({ roles, items }) => (
         <Route
           key={JSON.stringify(roles ?? null)}

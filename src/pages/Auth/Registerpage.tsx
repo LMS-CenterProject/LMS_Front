@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import GoogleLoginButton, { type GoogleProfile } from "./Google";
+const API = import.meta.env.VITE_API_URL as string;
 
 interface FormState {
   name: string;
   email: string;
+  phoneNumber: string; // ← added
   password: string;
   confirmPassword: string;
   role: "student" | "instructor";
@@ -14,6 +17,7 @@ interface FormState {
 interface FormErrors {
   name?: string;
   email?: string;
+  phoneNumber?: string; // ← added
   password?: string;
   confirmPassword?: string;
   agreed?: string;
@@ -82,12 +86,20 @@ const fieldCls = (focused: boolean, err?: string) => {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const RegisterPage: React.FC = () => {
-  const { register, isLoading, error, clearError, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const {
+    register,
+    isLoading,
+    error,
+    clearError,
+    isAuthenticated,
+    loginWithGoogle,
+  } = useAuth();
 
   const [form, setForm] = useState<FormState>({
     name: "",
     email: "",
+    phoneNumber: "", // ← added
     password: "",
     confirmPassword: "",
     role: "student",
@@ -105,7 +117,58 @@ const RegisterPage: React.FC = () => {
     if (isAuthenticated) navigate("/dashboard", { replace: true });
   }, [isAuthenticated, navigate]);
   useEffect(() => () => clearError(), [clearError]);
+  // State for the Google role picker
+  const [googlePending, setGooglePending] = useState<{
+    idToken: string;
+    profile: GoogleProfile;
+  } | null>(null);
+  const [googleRole, setGoogleRole] = useState<"student" | "instructor">(
+    "student",
+  );
+  const [googleLoading, setGoogleLoading] = useState(false);
 
+  const handleGoogleNewUser = (idToken: string, profile: GoogleProfile) => {
+    setGooglePending({ idToken, profile });
+  };
+
+  const handleGoogleRoleSubmit = async () => {
+    if (!googlePending) return;
+    setGoogleLoading(true);
+    const payload = {
+      idToken: googlePending.idToken,
+      role: googleRole === "student" ? 0 : 1,
+    };
+    console.log("Sending to backend:", payload);
+    try {
+      const res = await fetch(`${API}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail ?? "Failed");
+      loginWithGoogle(
+        {
+          id: data.userId,
+          name: data.fullName,
+          email: data.email,
+          role: data.role,
+          picture: googlePending.profile.picture,
+          givenName: googlePending.profile.given_name,
+          familyName: googlePending.profile.family_name,
+          emailVerified: googlePending.profile.email_verified,
+          googleId: googlePending.profile.sub,
+        },
+        data.accessToken,
+        data.refreshToken,
+      );
+      navigate("/dashboard");
+    } catch (err) {
+      // handle error
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
   // ── Validation ─────────────────────────────────────────────────────────────
 
   const validateStep1 = (): boolean => {
@@ -116,6 +179,10 @@ const RegisterPage: React.FC = () => {
     if (!form.email.trim()) errs.email = "Email is required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
       errs.email = "Enter a valid email";
+    // ── phone validation ───────────────────────────────────────────────────
+    if (!form.phoneNumber.trim()) errs.phoneNumber = "Phone number is required";
+    else if (!/^\+?[0-9]{6,15}$/.test(form.phoneNumber.trim()))
+      errs.phoneNumber = "Enter a valid phone number";
     setErrors(errs);
     return !Object.keys(errs).length;
   };
@@ -151,6 +218,7 @@ const RegisterPage: React.FC = () => {
     e.preventDefault();
     if (validateStep1()) setStep(2);
   };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateStep2()) return;
@@ -158,6 +226,7 @@ const RegisterPage: React.FC = () => {
       fullName: form.name.trim(),
       email: form.email.trim(),
       password: form.password,
+      phoneNumber: form.phoneNumber.trim(), // ← added
       role: form.role === "student" ? 0 : 1,
     });
   };
@@ -494,6 +563,42 @@ const RegisterPage: React.FC = () => {
                 <ErrorMsg msg={errors.email} />
               </div>
 
+              {/* ── Phone number (new) ──────────────────────────────────────── */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Phone number
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
+                      />
+                    </svg>
+                  </div>
+                  <input
+                    type="tel"
+                    name="phoneNumber"
+                    value={form.phoneNumber}
+                    onChange={handleChange}
+                    onFocus={() => setFocused("phoneNumber")}
+                    onBlur={() => setFocused(null)}
+                    placeholder="+1 555 000 0000"
+                    autoComplete="tel"
+                    className={`${fieldCls(focused === "phoneNumber", errors.phoneNumber)} pl-10`}
+                  />
+                </div>
+                <ErrorMsg msg={errors.phoneNumber} />
+              </div>
+
               <button
                 type="submit"
                 className="w-full bg-[#6d28d9] text-white font-bold py-3.5 rounded-xl hover:bg-[#5b21b6] active:scale-[0.99] transition-all text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-200 mt-2"
@@ -513,7 +618,11 @@ const RegisterPage: React.FC = () => {
                   />
                 </svg>
               </button>
+              <div className="lf-divider text-xs text-gray-400 font-medium">
+                or
+              </div>
 
+              <GoogleLoginButton onNewUser={handleGoogleNewUser} />
               <p className="text-center text-sm text-gray-500 pt-1">
                 Already have an account?{" "}
                 <Link
@@ -863,6 +972,81 @@ const RegisterPage: React.FC = () => {
           )}
         </div>
       </div>
+      {googlePending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-7 space-y-6">
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <img
+                src={googlePending.profile.picture}
+                className="w-10 h-10 rounded-full"
+                alt=""
+              />
+              <div>
+                <p className="font-semibold text-gray-900 text-sm">
+                  {googlePending.profile.name}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {googlePending.profile.email}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <p className="font-display font-bold text-gray-900 text-lg mb-1">
+                One last thing
+              </p>
+              <p className="text-sm text-gray-500">
+                How do you want to use LearnForge?
+              </p>
+            </div>
+
+            {/* Role selector — reuse same pattern as Step 2 */}
+            <div className="grid grid-cols-2 gap-3">
+              {(["student", "instructor"] as const).map((r) => {
+                const active = googleRole === r;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setGoogleRole(r)}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 text-sm font-medium transition-all duration-200 ${
+                      active
+                        ? "border-[#6d28d9] bg-purple-50 text-[#6d28d9] shadow-md shadow-purple-100"
+                        : "border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    <span className="text-2xl">
+                      {r === "student" ? "🎓" : "🧑‍🏫"}
+                    </span>
+                    <span className="font-bold">
+                      {r === "student" ? "Learn" : "Teach"}
+                    </span>
+                    <span className="text-[11px] opacity-70 font-normal">
+                      {r === "student" ? "Access courses" : "Create courses"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={handleGoogleRoleSubmit}
+              disabled={googleLoading}
+              className="w-full bg-[#6d28d9] text-white font-bold py-3.5 rounded-xl hover:bg-[#5b21b6] transition-all text-sm disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-purple-200"
+            >
+              {googleLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Setting up your account…
+                </>
+              ) : (
+                "Continue with Google →"
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

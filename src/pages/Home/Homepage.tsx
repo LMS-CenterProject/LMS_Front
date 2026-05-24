@@ -12,7 +12,7 @@ import FinalCTA from "./components/FinalCTA";
 import Footer from "./components/Footer";
 
 const HomePage: React.FC = () => {
-  const { courses, categories, loading, error } = useCourses(); // ✅ same data, no extra fetch
+  const { courses, categories, loading, error } = useCourses();
 
   return (
     <div className="min-h-screen bg-white text-gray-900">

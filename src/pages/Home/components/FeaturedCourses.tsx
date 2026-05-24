@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import CourseCard from "./CourseCard";
 import { type Course } from "../../../api/CoursesApi";
-
 interface Props {
   courses: Course[];
   loading: boolean;
@@ -73,7 +72,6 @@ const FeaturedCourses: React.FC<Props> = ({ courses, loading, error }) => {
           <h2 className="font-display font-extrabold text-3xl text-gray-900">
             Featured Courses
           </h2>
-    
         </div>
 
         {categories.length > 0 && (

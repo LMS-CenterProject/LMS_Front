@@ -1,7 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { type Course } from "../../../api/CoursesApi";
 import { decodeImageSrc } from "../../../helpers/decodeImage";
-
 const COURSE_ICONS = [
   "⚛️",
   "🧠",
@@ -41,9 +40,40 @@ const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
 interface Props {
   course: Course | null;
   onClose: () => void;
+  onEnroll?: (c: Course) => Promise<void>;
 }
 
-export default function CourseDetailModal({ course, onClose }: Props) {
+export default function CourseDetailModal({
+  course,
+  onClose,
+  onEnroll,
+}: Props) {
+  const currentUser = localStorage.getItem("user");
+  const currentUserRole = currentUser && JSON.parse(currentUser).role;
+  const isStudent = currentUserRole === "Student";
+  const canEnroll = isStudent && course?.status === "Published";
+  const [enrolling, setEnrolling] = useState(false);
+  const [enrollError, setEnrollError] = useState<string | null>(null);
+  const [enrollDone, setEnrollDone] = useState(false);
+  useEffect(() => {
+    setEnrolling(false);
+    setEnrollError(null);
+    setEnrollDone(false);
+  }, [course?.id]);
+
+  const handleEnroll = async () => {
+    if (!onEnroll || !course) return;
+    setEnrolling(true);
+    setEnrollError(null);
+    try {
+      await onEnroll(course);
+      setEnrollDone(true);
+    } catch (e: unknown) {
+      setEnrollError(e instanceof Error ? e.message : "Enrollment failed");
+    } finally {
+      setEnrolling(false);
+    }
+  };
   // Close on Escape
   useEffect(() => {
     if (!course) return;
@@ -206,12 +236,70 @@ export default function CourseDetailModal({ course, onClose }: Props) {
               {course.price === 0 ? "Free" : `$${course.price}`}
             </p>
           </div>
-          <button
-            className="px-6 py-2.5 rounded-full text-sm font-semibold text-white transition-opacity hover:opacity-85 cursor-pointer"
-            style={{ background: color }}
-          >
-            {course.price === 0 ? "Enroll for free" : "Enroll now"}
-          </button>
+
+          <div className="flex flex-col items-end gap-1.5">
+            {enrollError && (
+              <p className="text-[10px] text-red-500 font-semibold">
+                {enrollError}
+              </p>
+            )}
+
+            {canEnroll &&
+              (enrollDone ? (
+                <span className="px-6 py-2.5 rounded-full text-sm font-semibold text-white bg-emerald-500 flex items-center gap-1.5">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.5}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                  Enrolled!
+                </span>
+              ) : (
+                <button
+                  onClick={handleEnroll}
+                  disabled={enrolling}
+                  className="px-6 py-2.5 rounded-full text-sm font-semibold text-white transition-all hover:opacity-85 disabled:opacity-60 flex items-center gap-2"
+                  style={{ background: color }}
+                >
+                  {enrolling ? (
+                    <>
+                      <svg
+                        className="w-4 h-4 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v8z"
+                        />
+                      </svg>
+                      Enrolling…
+                    </>
+                  ) : course.price === 0 ? (
+                    "Enroll for free"
+                  ) : (
+                    "Enroll now"
+                  )}
+                </button>
+              ))}
+          </div>
         </div>
       </div>
 

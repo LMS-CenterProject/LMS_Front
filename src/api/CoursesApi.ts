@@ -83,7 +83,17 @@ export interface UpdateCoursePayload {
   thumbnailUrl: string;
   categoryId: string;
 }
-
+interface MyCourseResponse {
+  id: string;
+  title: string;
+  description: string;
+  categoryId: string;
+  thumbnail: string | null;
+  categoryName: string;
+  price: number;
+  language: string;
+  status: string;
+}
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 export const coursesApi = {
@@ -95,9 +105,6 @@ export const coursesApi = {
 
   getDetails: (id: string, token: string) =>
     lmsFetch<CourseDetails>(`/Course/${id}/details`, {}, token),
-
-  getMyCourses: (token: string) =>
-    lmsFetch<Course[]>("/Course/my-courses", {}, token),
 
   create: (payload: CreateCoursePayload, token: string) =>
     lmsFetch<Course>(
@@ -127,4 +134,26 @@ export const coursesApi = {
 
   archive: (id: string, token: string) =>
     lmsFetch<void>(`/Course/${id}/archive`, { method: "PUT" }, token),
+
+  getMyCourses: async (token: string): Promise<Course[]> => {
+    const raw = await lmsFetch<MyCourseResponse[]>(
+      "/Course/my-courses",
+      {},
+      token,
+    );
+    return (raw ?? []).map((c) => ({
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      categoryId: c.categoryId,
+      categoryName: c.categoryName,
+      thumbnailUrl: c.thumbnail ?? null, 
+      price: c.price,
+      language: c.language,
+      status: c.status,
+      instructorName: "",
+      sectionCount: 0,
+      lessonCount: 0,
+    }));
+  },
 };
