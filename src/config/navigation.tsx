@@ -6,7 +6,6 @@ import LMSDashboard from "../pages/Dashboard/DashboardPage";
 import ProfilePage from "../pages/Profile/Profile";
 import CoursesPage from "../pages/Courses/CoursesPage";
 import EnrollmentsPage from "../pages/Enrollments/EnrollmentsPage";
-import ContentPage from "../pages/ContentPage/ContentPage";
 import QuizzesPage from "../pages/Quizzes/QuizzesPage";
 import ProgressPage from "../pages/Progress/ProgressPage";
 import CertificatesPage from "../pages/Certificates/CertificatesPage";
@@ -245,12 +244,7 @@ export const NAV_GROUPS: NavGroup[] = [
         component: EnrollmentsPage,
         roles: ["Student"],
       },
-      {
-        icon: Icon.Folder,
-        label: "Sections & Lessons",
-        path: "/content",
-        component: ContentPage,
-      },
+   
       {
         icon: Icon.Quiz,
         label: "Quizzes",

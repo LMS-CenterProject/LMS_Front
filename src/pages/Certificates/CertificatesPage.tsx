@@ -1,7 +1,8 @@
-import  { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { certificatesApi } from "../../api/CertificatesApi";
 import type { Certificate } from "../../api/CertificatesApi";
+import { downloadCertificate } from "../../helpers/useCertificateDownload";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,72 @@ const ErrorBanner = ({ msg }: { msg: string }) => (
   </div>
 );
 
+// ─── Download Button ──────────────────────────────────────────────────────────
+
+function DownloadButton({
+  cert,
+  recipientName,
+  accent,
+}: {
+  cert: Certificate;
+  recipientName: string;
+  accent: string;
+}) {
+  const [status, setStatus] = useState<"idle" | "loading" | "done">("idle");
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (status === "loading") return;
+    setStatus("loading");
+    try {
+      await downloadCertificate({
+        courseTitle: cert.courseTitle,
+        instructorName: cert.instructorName,
+        recipientName,
+        issuedAt: cert.issuedAt,
+        certificateId: cert.id,
+      });
+      setStatus("done");
+      setTimeout(() => setStatus("idle"), 2500);
+    } catch {
+      setStatus("idle");
+    }
+  };
+
+  return (
+    <button
+      onClick={handleDownload}
+      title="Download certificate as PNG"
+      className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-80 disabled:opacity-50"
+      style={{ color: accent, background: `${accent}12` }}
+      disabled={status === "loading"}
+    >
+      {status === "loading" ? (
+        <>
+          <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="28" strokeDashoffset="10" />
+          </svg>
+          Generating…
+        </>
+      ) : status === "done" ? (
+        <>
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
+          Saved!
+        </>
+      ) : (
+        <>
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Download
+        </>
+      )}
+    </button>
+  );
+}
+
 // ─── Certificate Card ─────────────────────────────────────────────────────────
 
 const CERT_GRADIENTS = [
@@ -47,7 +114,15 @@ const CERT_ACCENT_COLORS = [
   "#0891b2",
 ];
 
-function CertificateCard({ cert, idx }: { cert: Certificate; idx: number }) {
+function CertificateCard({
+  cert,
+  idx,
+  recipientName,
+}: {
+  cert: Certificate;
+  idx: number;
+  recipientName: string;
+}) {
   const gradient = CERT_GRADIENTS[idx % CERT_GRADIENTS.length];
   const accent = CERT_ACCENT_COLORS[idx % CERT_ACCENT_COLORS.length];
 
@@ -104,19 +179,24 @@ function CertificateCard({ cert, idx }: { cert: Certificate; idx: number }) {
             {fmtDate(cert.issuedAt)}
           </p>
         </div>
-        {cert.certificateUrl ? (
-          <a
-            href={cert.certificateUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
-            style={{ color: accent, background: `${accent}12` }}
-          >
-            View →
-          </a>
-        ) : (
-          <span className="text-xs text-gray-400 italic">No URL</span>
-        )}
+
+        <div className="flex items-center gap-2">
+          {/* Download button */}
+          <DownloadButton cert={cert} recipientName={recipientName} accent={accent} />
+
+          {/* View online link */}
+          {cert.certificateUrl ? (
+            <a
+              href={cert.certificateUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+              style={{ color: accent, background: `${accent}12` }}
+            >
+              View →
+            </a>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -125,11 +205,17 @@ function CertificateCard({ cert, idx }: { cert: Certificate; idx: number }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CertificatesPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();    // assumes `user` has a `name` / `fullName` field
   const [certs, setCerts] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+
+  // Derive the recipient's display name — adjust field to match your User type.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyUser = user as any;
+  const recipientName: string =
+    anyUser?.fullName ?? anyUser?.name ?? anyUser?.displayName ?? "Student";
 
   useEffect(() => {
     if (!token) return;
@@ -254,7 +340,12 @@ export default function CertificatesPage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {filtered.map((c, idx) => (
-                  <CertificateCard key={c.id} cert={c} idx={idx} />
+                  <CertificateCard
+                    key={c.id}
+                    cert={c}
+                    idx={idx}
+                    recipientName={recipientName}
+                  />
                 ))}
               </div>
             )}

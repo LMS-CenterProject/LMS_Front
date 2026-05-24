@@ -4,9 +4,21 @@ import { useAuth } from "../../context/AuthContext";
 import { enrollmentsApi } from "../../api/EnrollmentsApi";
 import { certificatesApi } from "../../api/CertificatesApi";
 import { coursesApi } from "../../api/CoursesApi";
-import type { Enrollment } from "../../api/EnrollmentsApi";
+import type { Enrollment, CourseEnrollments } from "../../api/EnrollmentsApi";
 import type { Certificate } from "../../api/CertificatesApi";
 import type { Course } from "../../api/CoursesApi";
+
+// ─── Extended Course type ─────────────────────────────────────────────────────
+// These fields are returned by the courses API but not yet in the base type.
+
+interface CourseWithStats extends Course {
+  averageRating?: number;
+  totalRevenue?: number;
+  enrollmentCount?: number;
+  completionCount?: number;
+  totalWatchedSeconds?: number;
+  totalDurationSeconds?: number;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -294,6 +306,237 @@ const MiniBarChart: React.FC<{
   );
 };
 
+// ─── ENROLLED STUDENTS MODAL ──────────────────────────────────────────────────
+
+const EnrolledStudentsModal: React.FC<{
+  courseId: string;
+  courseTitle: string;
+  token: string;
+  onClose: () => void;
+}> = ({ courseId, courseTitle, token, onClose }) => {
+  const [data, setData] = useState<CourseEnrollments | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"name" | "progress" | "enrolled">("enrolled");
+
+  useEffect(() => {
+    enrollmentsApi
+      .getByCourse(courseId, token)
+      .then(setData)
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => setLoading(false));
+  }, [courseId, token]);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const filtered = (data?.enrollments ?? [])
+    .filter(
+      (e) =>
+        e.studentName.toLowerCase().includes(search.toLowerCase()) ||
+        e.studentEmail.toLowerCase().includes(search.toLowerCase()),
+    )
+    .sort((a, b) => {
+      if (sortBy === "progress") return b.progressPercentage - a.progressPercentage;
+      if (sortBy === "name") return a.studentName.localeCompare(b.studentName);
+      // enrolled — most recent first
+      return new Date(b.enrolledAt).getTime() - new Date(a.enrolledAt).getTime();
+    });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
+        style={{ animation: "modalIn 0.2s ease" }}
+      >
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-gray-100 flex items-start justify-between gap-4 shrink-0">
+          <div>
+            <h2 className="font-display text-lg font-bold text-gray-900 leading-tight">
+              {courseTitle}
+            </h2>
+            {data && (
+              <div className="flex items-center gap-3 mt-1.5">
+                <span className="text-xs text-gray-500">
+                  <span className="font-semibold text-gray-800">{data.totalEnrollments}</span> enrolled
+                </span>
+                <span className="text-gray-200">|</span>
+                <span className="text-xs text-gray-500">
+                  <span className="font-semibold text-[#10b981]">{data.completedEnrollments}</span> completed
+                </span>
+                <span className="text-gray-200">|</span>
+                <span className="text-xs text-gray-500">
+                  <span className="font-semibold text-[#3b82f6]">{data.activeEnrollments}</span> active
+                </span>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 shrink-0 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Controls */}
+        {!loading && !error && (
+          <div className="px-6 py-3 border-b border-gray-50 flex items-center gap-3 shrink-0">
+            <div className="relative flex-1">
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search by name or email…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg
+                  focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-300"
+              />
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {(["enrolled", "progress", "name"] as const).map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => setSortBy(opt)}
+                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors
+                    ${sortBy === opt
+                      ? "bg-[#6d28d9] text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                >
+                  {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1">
+          {loading ? (
+            <Spinner />
+          ) : error ? (
+            <div className="text-center py-12">
+              <p className="text-red-500 text-sm">{error}</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-14">
+              <div className="text-4xl mb-2">🎓</div>
+              <p className="text-gray-400 text-sm">
+                {search ? "No students match your search." : "No students enrolled yet."}
+              </p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/60 sticky top-0">
+                  {["Student", "Progress", "Lessons", "Status", "Enrolled"].map((h, i) => (
+                    <th
+                      key={h}
+                      className={`py-2.5 px-4 text-xs font-semibold text-gray-500
+                        ${i === 0 ? "text-left" : "text-right"}`}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((s, idx) => {
+                  const color = COURSE_COLORS[idx % COURSE_COLORS.length];
+                  return (
+                    <tr
+                      key={s.enrollmentId}
+                      className="border-b border-gray-50 hover:bg-purple-50/20 transition-colors"
+                    >
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                            style={{ background: color }}
+                          >
+                            {s.studentName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate max-w-[160px]">
+                              {s.studentName}
+                            </p>
+                            <p className="text-xs text-gray-400 truncate max-w-[160px]">
+                              {s.studentEmail}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-xs font-semibold text-gray-700">
+                            {s.progressPercentage}%
+                          </span>
+                          <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-700"
+                              style={{ width: `${s.progressPercentage}%`, background: color }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className="text-xs text-gray-600">
+                          {s.completedLessons}
+                          <span className="text-gray-300"> / </span>
+                          {s.totalLessons}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <StatusBadge status={s.status} />
+                      </td>
+                      <td className="py-3 px-4 text-right text-xs text-gray-400 whitespace-nowrap">
+                        {new Date(s.enrolledAt).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer */}
+        {!loading && !error && filtered.length > 0 && (
+          <div className="px-6 py-3 border-t border-gray-100 shrink-0">
+            <p className="text-xs text-gray-400">
+              Showing {filtered.length} of {data?.totalEnrollments ?? 0} students
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ─── STUDENT DASHBOARD ────────────────────────────────────────────────────────
 
 const StudentDashboard: React.FC<{
@@ -390,18 +633,8 @@ const StudentDashboard: React.FC<{
               className="text-xs text-[#6d28d9] hover:text-[#5b21b6] font-semibold flex items-center gap-1"
             >
               View all
-              <svg
-                className="w-3 h-3"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5l7 7-7 7"
-                />
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
           </div>
@@ -411,9 +644,7 @@ const StudentDashboard: React.FC<{
             ) : enrollments.length === 0 ? (
               <div className="text-center py-14 border-2 border-dashed border-gray-200 rounded-2xl">
                 <div className="text-4xl mb-3">📚</div>
-                <p className="text-gray-500 font-semibold">
-                  No enrollments yet
-                </p>
+                <p className="text-gray-500 font-semibold">No enrollments yet</p>
                 <p className="text-gray-400 text-sm mt-1">
                   <Link to="/enrollments" className="text-[#6d28d9] underline">
                     Enroll in a course
@@ -449,10 +680,7 @@ const StudentDashboard: React.FC<{
                           </p>
                         </div>
                         <div className="relative shrink-0">
-                          <CircularProgress
-                            value={enr.progressPercentage}
-                            color={color}
-                          />
+                          <CircularProgress value={enr.progressPercentage} color={color} />
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="text-[10px] font-bold text-gray-700">
                               {enr.progressPercentage}%
@@ -461,10 +689,7 @@ const StudentDashboard: React.FC<{
                         </div>
                       </div>
                       <div className="mt-3">
-                        <ProgressBar
-                          pct={enr.progressPercentage}
-                          color={color}
-                        />
+                        <ProgressBar pct={enr.progressPercentage} color={color} />
                         <div className="flex items-center justify-between mt-1.5">
                           <span className="text-xs text-gray-400">
                             {fmtSeconds(enr.totalWatchedSeconds)} /{" "}
@@ -486,13 +711,8 @@ const StudentDashboard: React.FC<{
           {/* Certificates */}
           <div className="lf-fade lf-d4 bg-white border border-gray-200 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-base font-bold text-gray-900">
-                Certificates
-              </h2>
-              <Link
-                to="/certificates"
-                className="text-xs text-[#6d28d9] font-semibold hover:text-[#5b21b6]"
-              >
+              <h2 className="font-display text-base font-bold text-gray-900">Certificates</h2>
+              <Link to="/certificates" className="text-xs text-[#6d28d9] font-semibold hover:text-[#5b21b6]">
                 View all
               </Link>
             </div>
@@ -519,12 +739,8 @@ const StudentDashboard: React.FC<{
                       🏆
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">
-                        {c.courseTitle}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        by {c.instructorName}
-                      </p>
+                      <p className="text-sm font-semibold text-gray-900 truncate">{c.courseTitle}</p>
+                      <p className="text-xs text-gray-400">by {c.instructorName}</p>
                     </div>
                     {c.certificateUrl && (
                       <a
@@ -546,13 +762,8 @@ const StudentDashboard: React.FC<{
           {/* Available Courses */}
           <div className="lf-fade lf-d4 bg-white border border-gray-200 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-base font-bold text-gray-900">
-                Available Courses
-              </h2>
-              <Link
-                to="/courses"
-                className="text-xs text-[#6d28d9] font-semibold hover:text-[#5b21b6]"
-              >
+              <h2 className="font-display text-base font-bold text-gray-900">Available Courses</h2>
+              <Link to="/courses" className="text-xs text-[#6d28d9] font-semibold hover:text-[#5b21b6]">
                 Browse
               </Link>
             </div>
@@ -560,30 +771,21 @@ const StudentDashboard: React.FC<{
               <Spinner />
             ) : publishedCourses.length === 0 ? (
               <div className="text-center py-6">
-                <p className="text-gray-400 text-sm">
-                  No published courses yet.
-                </p>
+                <p className="text-gray-400 text-sm">No published courses yet.</p>
               </div>
             ) : (
               <div className="space-y-2.5">
                 {publishedCourses.slice(0, 4).map((c, idx) => {
                   const color = COURSE_COLORS[idx % COURSE_COLORS.length];
                   return (
-                    <div
-                      key={c.id}
-                      className="flex items-center gap-3 group cursor-pointer"
-                    >
-                      <div
-                        className="w-1 h-10 rounded-full shrink-0"
-                        style={{ background: color }}
-                      />
+                    <div key={c.id} className="flex items-center gap-3 group cursor-pointer">
+                      <div className="w-1 h-10 rounded-full shrink-0" style={{ background: color }} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate group-hover:text-[#6d28d9] transition-colors">
                           {c.title}
                         </p>
                         <p className="text-xs text-gray-400">
-                          {c.language} ·{" "}
-                          {c.price === 0 ? "Free" : `$${c.price}`}
+                          {c.language} · {c.price === 0 ? "Free" : `$${c.price}`}
                         </p>
                       </div>
                       <StatusBadge status={c.status} />
@@ -603,9 +805,11 @@ const StudentDashboard: React.FC<{
 
 const InstructorDashboard: React.FC<{
   data: InstructorOverview;
-  courses: Course[];
+  courses: CourseWithStats[];
   loading: boolean;
-}> = ({ data, courses, loading }) => {
+  token: string;
+  onCourseClick: (courseId: string, courseTitle: string) => void;
+}> = ({ data, courses, loading, onCourseClick }) => {
   const kpis = [
     {
       label: "My Courses",
@@ -655,10 +859,7 @@ const InstructorDashboard: React.FC<{
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {loading
           ? Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse"
-              >
+              <div key={i} className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
                 <div className="w-8 h-8 bg-gray-200 rounded-lg mb-3" />
                 <div className="h-7 bg-gray-200 rounded w-16 mb-2" />
                 <div className="h-3 bg-gray-100 rounded w-24" />
@@ -678,9 +879,7 @@ const InstructorDashboard: React.FC<{
             <h3 className="font-display text-base font-bold text-gray-900 mb-1">
               Students per course
             </h3>
-            <p className="text-xs text-gray-400 mb-4">
-              Enrollment distribution
-            </p>
+            <p className="text-xs text-gray-400 mb-4">Enrollment distribution</p>
             <MiniBarChart
               data={data.courseStats.slice(0, 6).map((s, i) => ({
                 label:
@@ -700,10 +899,7 @@ const InstructorDashboard: React.FC<{
               <h3 className="font-display text-base font-bold text-gray-900">
                 My courses overview
               </h3>
-              <Link
-                to="/courses"
-                className="text-xs text-[#6d28d9] font-semibold hover:text-[#5b21b6]"
-              >
+              <Link to="/courses" className="text-xs text-[#6d28d9] font-semibold hover:text-[#5b21b6]">
                 Manage →
               </Link>
             </div>
@@ -712,11 +908,13 @@ const InstructorDashboard: React.FC<{
                 const color = COURSE_COLORS[idx % COURSE_COLORS.length];
                 const stat = data.courseStats.find((s) => s.courseId === c.id);
                 return (
-                  <div key={c.id} className="flex items-center gap-3 group">
-                    <div
-                      className="w-1.5 h-10 rounded-full shrink-0"
-                      style={{ background: color }}
-                    />
+                  <button
+                    key={c.id}
+                    onClick={() => onCourseClick(c.id, c.title)}
+                    className="w-full flex items-center gap-3 group text-left rounded-xl
+                      hover:bg-purple-50/50 transition-colors px-2 py-1.5 -mx-2"
+                  >
+                    <div className="w-1.5 h-10 rounded-full shrink-0" style={{ background: color }} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-[#6d28d9] transition-colors">
@@ -729,29 +927,25 @@ const InstructorDashboard: React.FC<{
                           {stat?.enrollmentCount ?? 0} students
                         </span>
                         <span className="text-xs text-gray-300">·</span>
-                        <span className="text-xs text-gray-400">
-                          {c.language}
-                        </span>
+                        <span className="text-xs text-gray-400">{c.language}</span>
                         <span className="text-xs text-gray-300">·</span>
-                        <span
-                          className="text-xs font-semibold"
-                          style={{ color }}
-                        >
+                        <span className="text-xs font-semibold" style={{ color }}>
                           {c.price === 0 ? "Free" : fmtCurrency(c.price)}
                         </span>
                       </div>
                     </div>
                     {stat && <StarRating value={stat.averageRating} />}
-                  </div>
+                    <svg className="w-4 h-4 text-gray-300 group-hover:text-[#6d28d9] shrink-0 transition-colors"
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
                 );
               })}
               {courses.length === 0 && (
                 <div className="text-center py-8">
                   <p className="text-gray-400 text-sm">No courses yet.</p>
-                  <Link
-                    to="/courses"
-                    className="text-xs text-[#6d28d9] underline mt-1 inline-block"
-                  >
+                  <Link to="/courses" className="text-xs text-[#6d28d9] underline mt-1 inline-block">
                     Create one →
                   </Link>
                 </div>
@@ -765,24 +959,16 @@ const InstructorDashboard: React.FC<{
       {!loading && (
         <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
           <div className="p-5 border-b border-gray-100">
-            <h3 className="font-display text-base font-bold text-gray-900">
-              Course performance
-            </h3>
+            <h3 className="font-display text-base font-bold text-gray-900">Course performance</h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              Detailed breakdown for all your courses
+              Click any row to see enrolled students
             </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
-                  {[
-                    "Course",
-                    "Enrolled",
-                    "Completion",
-                    "Rating",
-                    "Revenue",
-                  ].map((h, i) => (
+                  {["Course", "Enrolled", "Completion", "Rating", "Revenue"].map((h, i) => (
                     <th
                       key={h}
                       className={`py-2.5 px-4 text-xs font-semibold text-gray-500 ${i === 0 ? "text-left" : "text-right"}`}
@@ -797,21 +983,17 @@ const InstructorDashboard: React.FC<{
                   const color = COURSE_COLORS[i % COURSE_COLORS.length];
                   const completionPct =
                     stat.enrollmentCount > 0
-                      ? Math.round(
-                          (stat.completionCount / stat.enrollmentCount) * 100,
-                        )
+                      ? Math.round((stat.completionCount / stat.enrollmentCount) * 100)
                       : 0;
                   return (
                     <tr
                       key={stat.courseId}
-                      className="border-b border-gray-50 hover:bg-purple-50/30 transition-colors"
+                      onClick={() => onCourseClick(stat.courseId, stat.courseTitle)}
+                      className="border-b border-gray-50 hover:bg-purple-50/30 transition-colors cursor-pointer"
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div
-                            className="w-1.5 h-8 rounded-full shrink-0"
-                            style={{ background: color }}
-                          />
+                          <div className="w-1.5 h-8 rounded-full shrink-0" style={{ background: color }} />
                           <p className="text-sm font-semibold text-gray-900 truncate max-w-[180px]">
                             {stat.courseTitle}
                           </p>
@@ -822,16 +1004,11 @@ const InstructorDashboard: React.FC<{
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex flex-col items-end gap-1">
-                          <span className="text-xs text-gray-500">
-                            {completionPct}%
-                          </span>
+                          <span className="text-xs text-gray-500">{completionPct}%</span>
                           <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full"
-                              style={{
-                                width: `${completionPct}%`,
-                                background: color,
-                              }}
+                              style={{ width: `${completionPct}%`, background: color }}
                             />
                           </div>
                         </div>
@@ -847,10 +1024,7 @@ const InstructorDashboard: React.FC<{
                 })}
                 {data.courseStats.length === 0 && (
                   <tr>
-                    <td
-                      colSpan={5}
-                      className="py-12 text-center text-gray-400 text-sm"
-                    >
+                    <td colSpan={5} className="py-12 text-center text-gray-400 text-sm">
                       No course stats available.
                     </td>
                   </tr>
@@ -868,12 +1042,12 @@ const InstructorDashboard: React.FC<{
 
 const AdminDashboard: React.FC<{
   data: AdminOverview;
-  courses: Course[];
+  courses: CourseWithStats[];
   loading: boolean;
-}> = ({ data, courses, loading }) => {
-  const [sortBy, setSortBy] = useState<"enrollments" | "revenue" | "rating">(
-    "enrollments",
-  );
+  token: string;
+  onCourseClick: (courseId: string, courseTitle: string) => void;
+}> = ({ data, courses, loading, onCourseClick }) => {
+  const [sortBy, setSortBy] = useState<"enrollments" | "revenue" | "rating">("enrollments");
 
   const sorted = [...data.courseStats].sort((a, b) => {
     if (sortBy === "enrollments") return b.enrollmentCount - a.enrollmentCount;
@@ -937,10 +1111,7 @@ const AdminDashboard: React.FC<{
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {loading
           ? Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse"
-              >
+              <div key={i} className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
                 <div className="w-8 h-8 bg-gray-200 rounded-lg mb-3" />
                 <div className="h-7 bg-gray-200 rounded w-16 mb-2" />
                 <div className="h-3 bg-gray-100 rounded w-24" />
@@ -955,9 +1126,7 @@ const AdminDashboard: React.FC<{
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Status breakdown */}
           <div className="bg-white border border-gray-200 rounded-2xl p-5">
-            <h3 className="font-display text-base font-bold text-gray-900 mb-4">
-              Course status
-            </h3>
+            <h3 className="font-display text-base font-bold text-gray-900 mb-4">Course status</h3>
             <MiniBarChart
               data={Object.entries(statusCounts).map(([label, value], i) => ({
                 label,
@@ -972,15 +1141,11 @@ const AdminDashboard: React.FC<{
                   <div className="flex items-center gap-2">
                     <div
                       className="w-2.5 h-2.5 rounded-full"
-                      style={{
-                        background: COURSE_COLORS[i % COURSE_COLORS.length],
-                      }}
+                      style={{ background: COURSE_COLORS[i % COURSE_COLORS.length] }}
                     />
                     <span className="text-xs text-gray-600">{status}</span>
                   </div>
-                  <span className="text-xs font-semibold text-gray-800">
-                    {count}
-                  </span>
+                  <span className="text-xs font-semibold text-gray-800">{count}</span>
                 </div>
               ))}
             </div>
@@ -997,17 +1162,18 @@ const AdminDashboard: React.FC<{
                 .sort((a, b) => b.totalRevenue - a.totalRevenue)
                 .slice(0, 5)
                 .map((s, idx) => {
-                  const maxRev = Math.max(
-                    ...data.courseStats.map((x) => x.totalRevenue),
-                    1,
-                  );
+                  const maxRev = Math.max(...data.courseStats.map((x) => x.totalRevenue), 1);
                   const pct = (s.totalRevenue / maxRev) * 100;
                   const color = COURSE_COLORS[idx % COURSE_COLORS.length];
                   return (
-                    <div key={s.courseId} className="flex items-center gap-3">
+                    <button
+                      key={s.courseId}
+                      onClick={() => onCourseClick(s.courseId, s.courseTitle)}
+                      className="w-full flex items-center gap-3 group text-left"
+                    >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-semibold text-gray-800 truncate max-w-[160px]">
+                          <span className="text-xs font-semibold text-gray-800 truncate max-w-[160px] group-hover:text-[#6d28d9] transition-colors">
                             {s.courseTitle}
                           </span>
                           <span className="text-xs font-bold" style={{ color }}>
@@ -1021,7 +1187,7 @@ const AdminDashboard: React.FC<{
                           />
                         </div>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
             </div>
@@ -1034,11 +1200,9 @@ const AdminDashboard: React.FC<{
         <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
           <div className="p-5 flex items-center justify-between border-b border-gray-100">
             <div>
-              <h3 className="font-display text-base font-bold text-gray-900">
-                All courses
-              </h3>
+              <h3 className="font-display text-base font-bold text-gray-900">All courses</h3>
               <p className="text-xs text-gray-400 mt-0.5">
-                {data.courseStats.length} courses across the platform
+                {data.courseStats.length} courses · click any row to see enrolled students
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1047,7 +1211,10 @@ const AdminDashboard: React.FC<{
                   key={opt}
                   onClick={() => setSortBy(opt)}
                   className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors
-                    ${sortBy === opt ? "bg-[#6d28d9] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                    ${sortBy === opt
+                      ? "bg-[#6d28d9] text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
                 >
                   {opt.charAt(0).toUpperCase() + opt.slice(1)}
                 </button>
@@ -1058,13 +1225,7 @@ const AdminDashboard: React.FC<{
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
-                  {[
-                    "Course",
-                    "Enrolled",
-                    "Completion",
-                    "Rating",
-                    "Revenue",
-                  ].map((h, i) => (
+                  {["Course", "Enrolled", "Completion", "Rating", "Revenue"].map((h, i) => (
                     <th
                       key={h}
                       className={`py-2.5 px-4 text-xs font-semibold text-gray-500 ${i === 0 ? "text-left" : "text-right"}`}
@@ -1079,28 +1240,22 @@ const AdminDashboard: React.FC<{
                   const color = COURSE_COLORS[i % COURSE_COLORS.length];
                   const completionPct =
                     stat.enrollmentCount > 0
-                      ? Math.round(
-                          (stat.completionCount / stat.enrollmentCount) * 100,
-                        )
+                      ? Math.round((stat.completionCount / stat.enrollmentCount) * 100)
                       : 0;
                   return (
                     <tr
                       key={stat.courseId}
-                      className="border-b border-gray-50 hover:bg-purple-50/30 transition-colors"
+                      onClick={() => onCourseClick(stat.courseId, stat.courseTitle)}
+                      className="border-b border-gray-50 hover:bg-purple-50/30 transition-colors cursor-pointer"
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div
-                            className="w-1.5 h-8 rounded-full shrink-0"
-                            style={{ background: color }}
-                          />
+                          <div className="w-1.5 h-8 rounded-full shrink-0" style={{ background: color }} />
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-gray-900 truncate max-w-[180px]">
                               {stat.courseTitle}
                             </p>
-                            <p className="text-xs text-gray-400">
-                              {stat.instructorName}
-                            </p>
+                            <p className="text-xs text-gray-400">{stat.instructorName}</p>
                           </div>
                         </div>
                       </td>
@@ -1109,16 +1264,11 @@ const AdminDashboard: React.FC<{
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex flex-col items-end gap-1">
-                          <span className="text-xs text-gray-500">
-                            {completionPct}%
-                          </span>
+                          <span className="text-xs text-gray-500">{completionPct}%</span>
                           <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full"
-                              style={{
-                                width: `${completionPct}%`,
-                                background: color,
-                              }}
+                              style={{ width: `${completionPct}%`, background: color }}
                             />
                           </div>
                         </div>
@@ -1134,10 +1284,7 @@ const AdminDashboard: React.FC<{
                 })}
                 {sorted.length === 0 && (
                   <tr>
-                    <td
-                      colSpan={5}
-                      className="py-12 text-center text-gray-400 text-sm"
-                    >
+                    <td colSpan={5} className="py-12 text-center text-gray-400 text-sm">
                       No course data available.
                     </td>
                   </tr>
@@ -1157,19 +1304,9 @@ const ROLE_CONFIG: Record<
   string,
   { label: string; bg: string; color: string; emoji: string }
 > = {
-  SuperAdmin: {
-    label: "Super Admin",
-    bg: "#ede9fe",
-    color: "#5b21b6",
-    emoji: "🛡️",
-  },
+  SuperAdmin: { label: "Super Admin", bg: "#ede9fe", color: "#5b21b6", emoji: "🛡️" },
   Admin: { label: "Admin", bg: "#ede9fe", color: "#5b21b6", emoji: "⚙️" },
-  Instructor: {
-    label: "Instructor",
-    bg: "#d1fae5",
-    color: "#065f46",
-    emoji: "🧑‍🏫",
-  },
+  Instructor: { label: "Instructor", bg: "#d1fae5", color: "#065f46", emoji: "🧑‍🏫" },
   Student: { label: "Student", bg: "#dbeafe", color: "#1e40af", emoji: "🎓" },
 };
 
@@ -1183,25 +1320,37 @@ const DashboardPage: React.FC = () => {
   const isInstructor = role === "Instructor";
   const isStudent = !isAdmin && !isInstructor;
 
-  // ── Shared state ────────────────────────────────────────────────────────────
+  // ── State ────────────────────────────────────────────────────────────────────
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [courses, setCourses] = useState<CourseWithStats[]>([]);
   const [adminData, setAdminData] = useState<AdminOverview | null>(null);
-  const [instructorData, setInstructorData] =
-    useState<InstructorOverview | null>(null);
+  const [instructorData, setInstructorData] = useState<InstructorOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Modal state ───────────────────────────────────────────────────────────────
+  const [selectedCourse, setSelectedCourse] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+
+  const handleCourseClick = useCallback((courseId: string, courseTitle: string) => {
+    setSelectedCourse({ id: courseId, title: courseTitle });
+  }, []);
+
+  const handleModalClose = useCallback(() => {
+    setSelectedCourse(null);
+  }, []);
 
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     setError(null);
     try {
-      const allCourses = await coursesApi.getAll(token);
+      const allCourses = (await coursesApi.getAll(token)) as CourseWithStats[];
 
       if (isStudent) {
-        // ── Student: own enrollments + certificates ──────────────────────────
         const [enrs, certs] = await Promise.all([
           enrollmentsApi.getMyEnrollments(token),
           certificatesApi.getMyCertificates(token),
@@ -1210,36 +1359,41 @@ const DashboardPage: React.FC = () => {
         setCertificates(certs);
         setCourses(allCourses);
       } else {
-        // ── Instructor / Admin: own or all courses ───────────────────────────
         const myCourses = isAdmin
           ? allCourses
           : allCourses.filter((c) => c.instructorId === user?.id);
         setCourses(myCourses);
 
-        const courseStats: CourseStats[] = myCourses.map((c) => ({
-          courseId: c.id,
-          courseTitle: c.title,
-          instructorName: c.instructorName ?? user?.name ?? "Unknown",
-          enrollmentCount: (c as any).enrollmentCount ?? 0,
-          completionCount: (c as any).completionCount ?? 0,
-          averageRating: (c as any).averageRating ?? 0,
-          totalRevenue: (c as any).totalRevenue ?? 0,
-          totalWatchedSeconds: (c as any).totalWatchedSeconds ?? 0,
-          totalCourseDurationSeconds: (c as any).totalDurationSeconds ?? 0,
-        }));
+        // ── Fetch real enrollment stats for each course ──────────────────────
+        const courseEnrollmentResults = await Promise.allSettled(
+          myCourses.map((c) => enrollmentsApi.getByCourse(c.id, token)),
+        );
 
-        const totalStudents = courseStats.reduce(
-          (a, s) => a + s.enrollmentCount,
-          0,
-        );
-        const totalRevenue = courseStats.reduce(
-          (a, s) => a + s.totalRevenue,
-          0,
-        );
+        const courseStats: CourseStats[] = myCourses.map((c, i) => {
+          const result = courseEnrollmentResults[i];
+          const enrData = result.status === "fulfilled" ? result.value : null;
+
+          return {
+            courseId: c.id,
+            courseTitle: c.title,
+            instructorName: c.instructorName ?? user?.name ?? "Unknown",
+            // Real counts from enrollment API
+            enrollmentCount: enrData?.totalEnrollments ?? 0,
+            completionCount: enrData?.completedEnrollments ?? 0,
+            totalWatchedSeconds:
+              enrData?.enrollments.reduce((sum, e) => sum + e.totalWatchedSeconds, 0) ?? 0,
+            // Real ratings & revenue from the course object itself
+            averageRating: c.averageRating ?? 0,
+            totalRevenue: c.totalRevenue ?? 0,
+            totalCourseDurationSeconds: c.totalDurationSeconds ?? 0,
+          };
+        });
+
+        const totalStudents = courseStats.reduce((a, s) => a + s.enrollmentCount, 0);
+        const totalRevenue = courseStats.reduce((a, s) => a + s.totalRevenue, 0);
         const avgRating =
           courseStats.length > 0
-            ? courseStats.reduce((a, s) => a + s.averageRating, 0) /
-              courseStats.length
+            ? courseStats.reduce((a, s) => a + s.averageRating, 0) / courseStats.length
             : 0;
 
         if (isAdmin) {
@@ -1248,8 +1402,7 @@ const DashboardPage: React.FC = () => {
           ).size;
           setAdminData({
             totalCourses: myCourses.length,
-            publishedCourses: myCourses.filter((c) => c.status === "Published")
-              .length,
+            publishedCourses: myCourses.filter((c) => c.status === "Published").length,
             totalInstructors: uniqueInstructors,
             totalStudents,
             totalRevenue,
@@ -1257,18 +1410,14 @@ const DashboardPage: React.FC = () => {
             courseStats,
           });
         } else {
-          const totalCompletions = courseStats.reduce(
-            (a, s) => a + s.completionCount,
-            0,
-          );
+          const totalCompletions = courseStats.reduce((a, s) => a + s.completionCount, 0);
           const completionRate =
             totalStudents > 0
               ? Math.round((totalCompletions / totalStudents) * 100)
               : 0;
           setInstructorData({
             totalCourses: myCourses.length,
-            publishedCourses: myCourses.filter((c) => c.status === "Published")
-              .length,
+            publishedCourses: myCourses.filter((c) => c.status === "Published").length,
             totalStudents,
             totalRevenue,
             averageRating: avgRating,
@@ -1278,9 +1427,7 @@ const DashboardPage: React.FC = () => {
         }
       }
     } catch (e: unknown) {
-      setError(
-        e instanceof Error ? e.message : "Failed to load dashboard data",
-      );
+      setError(e instanceof Error ? e.message : "Failed to load dashboard data");
     } finally {
       setLoading(false);
     }
@@ -1310,6 +1457,10 @@ const DashboardPage: React.FC = () => {
           from { opacity:0; transform:translateY(14px); }
           to   { opacity:1; transform:translateY(0); }
         }
+        @keyframes modalIn {
+          from { opacity:0; transform:scale(0.96) translateY(8px); }
+          to   { opacity:1; transform:scale(1) translateY(0); }
+        }
         .lf-fade { animation: fadeUp 0.45s ease forwards; }
         .lf-d1 { animation-delay:0.04s; opacity:0; }
         .lf-d2 { animation-delay:0.10s; opacity:0; }
@@ -1319,7 +1470,7 @@ const DashboardPage: React.FC = () => {
       `}</style>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-        {/* ── Welcome Header ────────────────────────────────────────────────── */}
+        {/* ── Welcome Header ─────────────────────────────────────────────────── */}
         <div className="lf-fade lf-d1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="text-gray-400 text-sm">{greeting()},</p>
@@ -1339,18 +1490,9 @@ const DashboardPage: React.FC = () => {
               onClick={load}
               className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-[#6d28d9] transition-colors px-3 py-2 rounded-xl border border-gray-200 hover:border-purple-200 bg-white"
             >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               Refresh
             </button>
@@ -1388,9 +1530,7 @@ const DashboardPage: React.FC = () => {
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
             {error}
-            <button onClick={load} className="ml-3 underline text-red-600">
-              Retry
-            </button>
+            <button onClick={load} className="ml-3 underline text-red-600">Retry</button>
           </div>
         )}
 
@@ -1410,6 +1550,8 @@ const DashboardPage: React.FC = () => {
             data={instructorData}
             courses={courses}
             loading={loading}
+            token={token}
+            onCourseClick={handleCourseClick}
           />
         )}
 
@@ -1420,11 +1562,23 @@ const DashboardPage: React.FC = () => {
             data={adminData}
             courses={courses}
             loading={loading}
+            token={token}
+            onCourseClick={handleCourseClick}
           />
         )}
 
         {isAdmin && loading && <Spinner />}
       </div>
+
+      {/* ── Enrolled Students Modal ───────────────────────────────────────────── */}
+      {selectedCourse && (
+        <EnrolledStudentsModal
+          courseId={selectedCourse.id}
+          courseTitle={selectedCourse.title}
+          token={token}
+          onClose={handleModalClose}
+        />
+      )}
     </div>
   );
 };

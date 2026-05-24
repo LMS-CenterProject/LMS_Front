@@ -7,7 +7,7 @@ export interface ProgressUpdatePayload {
   isCompleted: boolean;
 }
 
-export interface ProgressResponse {
+export interface ProgressUpdateResponse {
   lessonId: string;
   isCompleted: boolean;
   watchedSeconds: number;
@@ -21,17 +21,20 @@ export interface ProgressResponse {
 export const progressApi = {
   /**
    * PATCH /api/progress/lessons/{lessonId}
-   * Set isCompleted = true to mark done.
-   * If ALL lessons are done, enrollment auto-completes + certificate issued.
+   * Update watch progress. Set isCompleted = true to mark as done.
+   * If all lessons complete, enrollment auto-completes and certificate is issued.
    */
   updateLesson: (
     lessonId: string,
     payload: ProgressUpdatePayload,
     token: string,
   ) =>
-    lmsFetch<ProgressResponse>(
+    lmsFetch<ProgressUpdateResponse>(
       `/progress/lessons/${lessonId}`,
-      { method: "PATCH", body: JSON.stringify(payload) },
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
       token,
     ),
 };

@@ -10,10 +10,6 @@ export async function lmsFetch<T>(
     Accept: "text/plain",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
-  console.log("TOKEN:", token);
-  console.log("API:", API);
-  console.log("PATH:", path);
-  console.log("FINAL:", `${API}${path}`);
   // Merge caller-supplied headers (don't overwrite auth)
   const callerHeaders = (options.headers ?? {}) as Record<string, string>;
   Object.assign(headers, callerHeaders);

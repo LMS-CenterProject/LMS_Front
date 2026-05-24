@@ -13,7 +13,7 @@ interface GoogleCredentialResponse {
   credential: string;
 }
 
-interface GoogleProfile {
+export interface GoogleProfile {
   sub: string;
   name: string;
   given_name: string;
@@ -22,15 +22,17 @@ interface GoogleProfile {
   email_verified: boolean;
   picture: string;
 }
-
-interface ApiResponse {
-  userId: string;
-  fullName: string;
-  email: string;
-  role: string;
-  accessToken: string;
-  refreshToken: string;
+interface Props {
+  onNewUser?: (idToken: string, profile: GoogleProfile) => void;
 }
+// interface ApiResponse {
+//   userId: string;
+//   fullName: string;
+//   email: string;
+//   role: string;
+//   accessToken: string;
+//   refreshToken: string;
+// }
 
 type Status =
   | { type: "idle" }
@@ -39,7 +41,7 @@ type Status =
   | { type: "error"; message: string };
 
 const API = import.meta.env.VITE_API_URL as string;
-let googleInitialized = false;
+// let googleInitialized = false;
 
 const decodeJwt = (token: string): GoogleProfile => {
   const base64 = token.split(".")[1];
@@ -57,22 +59,20 @@ const buildCallback =
     navigate: ReturnType<typeof useNavigate>,
     setStatus: (s: Status) => void,
     loginWithGoogle: (user: User, token: string, refreshToken: string) => void,
+    onNewUser?: (idToken: string, profile: GoogleProfile) => void,
   ) =>
   async (response: GoogleCredentialResponse) => {
     const idToken = response.credential;
-
-    if (!idToken) {
-      setStatus({ type: "error", message: "No token received from Google." });
-      return;
-    }
-    if (!API) {
-      setStatus({ type: "error", message: "VITE_API_URL is not set." });
-      return;
-    }
-
     const googleProfile = decodeJwt(idToken);
-    setStatus({ type: "loading", message: "Signing you in..." });
 
+    // If onNewUser is provided (register page), always show role picker first
+    if (onNewUser) {
+      onNewUser(idToken, googleProfile);
+      return;
+    }
+
+    // No onNewUser = login page, go straight to auth
+    setStatus({ type: "loading", message: "Signing you in..." });
     try {
       const res = await fetch(`${API}/auth/google`, {
         method: "POST",
@@ -80,16 +80,12 @@ const buildCallback =
         body: JSON.stringify({ idToken }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const err = await res.json();
-        setStatus({
-          type: "error",
-          message: `Error ${res.status}: ${err?.detail ?? JSON.stringify(err)}`,
-        });
+        setStatus({ type: "error", message: data?.detail ?? "Login failed." });
         return;
       }
-
-      const data: ApiResponse = await res.json();
 
       const user: User = {
         id: data.userId,
@@ -102,22 +98,17 @@ const buildCallback =
         emailVerified: googleProfile.email_verified,
         googleId: googleProfile.sub,
       };
-
       loginWithGoogle(user, data.accessToken, data.refreshToken);
       setStatus({
         type: "success",
-        message: `Welcome, ${googleProfile.given_name}!`,
+        message: `Welcome back, ${googleProfile.given_name}!`,
       });
       setTimeout(() => navigate("/dashboard"), 800);
-    } catch (err) {
-      setStatus({
-        type: "error",
-        message: err instanceof Error ? err.message : "Network error.",
-      });
+    } catch {
+      setStatus({ type: "error", message: "Network error." });
     }
   };
-
-function GoogleLoginButton() {
+function GoogleLoginButton({ onNewUser }: Props) {
   const clientID = import.meta.env.VITE_CLIENT_ID as string;
   const navigate = useNavigate();
   const { loginWithGoogle } = useAuth();
@@ -132,18 +123,29 @@ function GoogleLoginButton() {
   useEffect(() => {
     loginRef.current = loginWithGoogle;
   }, [loginWithGoogle]);
+  const onNewUserRef = useRef(onNewUser);
+  useEffect(() => {
+    onNewUserRef.current = onNewUser;
+  }, [onNewUser]);
 
   useEffect(() => {
-    if (googleInitialized || !clientID) return;
+    if (!clientID) return;
 
     const init = () => {
-      if (!window.google || googleInitialized) return;
-      googleInitialized = true;
+      if (!window.google) return;
+
+      // Reset so re-initialization picks up the latest refs
+      // googleInitialized = false;
 
       window.google.accounts.id.initialize({
         client_id: clientID,
         callback: (r: GoogleCredentialResponse) =>
-          buildCallback(navigateRef.current, setStatus, loginRef.current)(r),
+          buildCallback(
+            navigateRef.current,
+            setStatus,
+            loginRef.current,
+            onNewUserRef.current, // ← this was missing
+          )(r),
       });
 
       const el = document.getElementById("googleBtn");
@@ -151,9 +153,11 @@ function GoogleLoginButton() {
         window.google.accounts.id.renderButton(el, {
           theme: "outline",
           size: "large",
+          width: el.offsetWidth,
         });
       }
       setScriptReady(true);
+      // googleInitialized = true;
     };
 
     if (window.google) {

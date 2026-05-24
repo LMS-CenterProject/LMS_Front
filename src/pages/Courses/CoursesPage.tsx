@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { coursesApi } from "../../api/CoursesApi";
 import { categoriesApi, type Category } from "../../api/CategoriesApi";
 import { lmsFetch } from "../../api/LmsApi";
@@ -6,6 +6,9 @@ import { useAuth } from "../../context/AuthContext";
 import type { Course } from "../../api/CoursesApi";
 import { decodeImageSrc } from "../../helpers/decodeImage";
 import { encodeFileToBase64 } from "../../helpers/encodeFile";
+import CourseCard from "../Home/components/CourseCard";
+import { useCourses } from "../../context/CoursesContext";
+import { enrollmentsApi } from "../../api/EnrollmentsApi";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface InstructorOption {
@@ -417,178 +420,6 @@ const ConfirmDelete = ({
   </Modal>
 );
 
-// ─── Course Card (grid view) ──────────────────────────────────────────────────
-
-function CourseGridCard({
-  course,
-  onEdit,
-  onDelete,
-  onPublish,
-  onArchive,
-}: {
-  course: Course;
-  onEdit: (c: Course) => void;
-  onDelete: (c: Course) => void;
-  onPublish: (c: Course) => void;
-  onArchive: (c: Course) => void;
-}) {
-  const icon = deterministicPick(COURSE_ICONS, course.id);
-  const color = deterministicPick(COURSE_COLORS, course.id);
-  const imgSrc = decodeImageSrc(course.thumbnailUrl);
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-purple-200 hover:shadow-md hover:shadow-purple-50 transition-all duration-200 flex flex-col">
-      <div
-        className="relative h-36 flex items-center justify-center"
-        style={{ background: `${color}12` }}
-      >
-        {imgSrc ? (
-          <img
-            src={imgSrc}
-            alt={course.title}
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-        ) : (
-          <span className="text-5xl">{icon}</span>
-        )}
-        <div className="absolute top-3 right-3">
-          {course.status === "Published" ? (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-              Published
-            </span>
-          ) : course.status === "Draft" ? (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">
-              Draft
-            </span>
-          ) : (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-              {course.status}
-            </span>
-          )}
-        </div>
-        {course.price === 0 && (
-          <div className="absolute top-3 left-3">
-            <span
-              className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
-              style={{ background: color }}
-            >
-              Free
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div className="p-4 flex flex-col flex-1">
-        <p
-          className="text-[10px] font-bold uppercase tracking-widest mb-1"
-          style={{ color }}
-        >
-          {course.categoryName}
-        </p>
-        <h3 className="font-bold text-gray-900 text-sm leading-snug line-clamp-2 mb-1">
-          {course.title}
-        </h3>
-        <p className="text-xs text-gray-500 mb-3">by {course.instructorName}</p>
-        <p className="text-xs text-gray-400 line-clamp-2 mb-3">
-          {course.description}
-        </p>
-
-        <div className="flex items-center gap-3 mb-3 flex-wrap">
-          <div className="flex items-center gap-1 text-xs text-gray-500">
-            <svg
-              className="w-3.5 h-3.5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-              />
-            </svg>
-            <span>
-              {course.sectionCount} section
-              {course.sectionCount !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-gray-500">
-            <svg
-              className="w-3.5 h-3.5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <span>
-              {course.lessonCount} lesson{course.lessonCount !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-gray-500">
-            <svg
-              className="w-3.5 h-3.5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"
-              />
-            </svg>
-            <span>{course.language}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between mt-auto">
-          <span className="font-extrabold text-gray-900 text-base">
-            {course.price === 0 ? "Free" : `$${course.price}`}
-          </span>
-          <span className="text-[10px] font-semibold text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full">
-            {course.categoryName}
-          </span>
-        </div>
-      </div>
-
-      <div className="border-t border-gray-100 px-4 py-3 flex items-center gap-1.5 flex-wrap">
-        {course.status !== "Published" && (
-          <Btn variant="ghost" size="sm" onClick={() => onPublish(course)}>
-            Publish
-          </Btn>
-        )}
-        {course.status === "Published" && (
-          <Btn variant="ghost" size="sm" onClick={() => onArchive(course)}>
-            Archive
-          </Btn>
-        )}
-        <div className="ml-auto flex gap-1.5">
-          <Btn variant="secondary" size="sm" onClick={() => onEdit(course)}>
-            Edit
-          </Btn>
-          <Btn variant="danger" size="sm" onClick={() => onDelete(course)}>
-            Delete
-          </Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type ViewMode = "grid" | "list";
@@ -599,10 +430,13 @@ export default function CoursesPage() {
   const currentUserEmail: string = (authUser as any)?.email ?? "";
   const isAdmin =
     currentUserRole === "Admin" || currentUserRole === "SuperAdmin";
-  const [courses, setCourses] = useState<Course[]>([]);
+  const isInstructor = currentUserRole === "Instructor";
+  const canManage = isAdmin || isInstructor;
+  const { courses: allCourses, loading, refresh } = useCourses();
+  const isStudent = !isAdmin && !isInstructor;
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [instructors, setInstructors] = useState<InstructorOption[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [modal, setModal] = useState<"create" | "edit" | "delete" | null>(null);
@@ -624,39 +458,27 @@ export default function CoursesPage() {
     thumbnailBase64: "",
   });
 
-  // Load courses
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setCourses(await coursesApi.getAll(token ?? undefined));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load courses");
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  // Load categories
+  const courses = useMemo(() => {
+    if (!isInstructor) return allCourses;
+    const myName =
+      instructors.find((i) => i.email === currentUserEmail)?.fullName ??
+      (authUser as any)?.fullName ??
+      (authUser as any)?.name;
+    return myName
+      ? allCourses.filter((c) => c.instructorName === myName)
+      : allCourses;
+  }, [allCourses, isInstructor, instructors, currentUserEmail, authUser]);
   useEffect(() => {
     categoriesApi.getAll().then(setCategories).catch(console.error);
   }, []);
 
   // Load instructors (users with role = Instructor)
   useEffect(() => {
-    if (!token) return;
+    if (!token || !isAdmin) return;
     fetchInstructors(token)
-      .then((list) => {
-        console.log("[CoursesPage] instructors fetched:", list);
-        setInstructors(list);
-      })
+      .then((list) => setInstructors(list))
       .catch(console.error);
-  }, [token]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
+  }, [token, isAdmin]);
   const flash = (msg: string) => {
     setSuccess(msg);
     setTimeout(() => setSuccess(null), 3000);
@@ -720,32 +542,16 @@ export default function CoursesPage() {
   };
 
   // ── Create ─────────────────────────────────────────────────────────────────
+  // handleCreate — REMOVE the createPayload variable, pass directly:
   const handleCreate = async () => {
     if (!token) return;
-
-    // Guard: admin must pick an instructor
     if (isAdmin && !form.instructorId) {
       setError("Please select an instructor.");
       return;
     }
-
     setSaving(true);
     setError(null);
     try {
-      // Call lmsFetch directly so we own the full request body.
-      // coursesApi.create wrappers may silently drop instructorId;
-      // this guarantees the selected instructor UUID reaches the API.
-      const createPayload = {
-        instructorId: form.instructorId,
-        categoryId: form.categoryId,
-        title: form.title,
-        description: form.description,
-        thumbnailUrl: form.thumbnailBase64 || "",
-        price: parseFloat(form.price),
-        level: parseInt(form.level),
-        language: form.language,
-      };
-      console.log("[CoursesPage] handleCreate payload:", createPayload);
       await lmsFetch<unknown>(
         "/Course",
         {
@@ -763,10 +569,9 @@ export default function CoursesPage() {
         },
         token,
       );
-
       setModal(null);
       flash("Course created!");
-      load();
+      refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create course");
     } finally {
@@ -774,7 +579,7 @@ export default function CoursesPage() {
     }
   };
 
-  // ── Edit ──────────────────────────────────────────────────────────────────
+  // handleEdit — same, remove editPayload variable:
   const handleEdit = async () => {
     if (!selected || !token) return;
     if (isAdmin && !form.instructorId) {
@@ -784,19 +589,6 @@ export default function CoursesPage() {
     setSaving(true);
     setError(null);
     try {
-      // Use lmsFetch directly to guarantee instructorId is in the body.
-      const editPayload = {
-        courseId: selected.id,
-        instructorId: form.instructorId,
-        categoryId: form.categoryId,
-        title: form.title,
-        description: form.description,
-        thumbnailUrl: form.thumbnailBase64 || "",
-        price: parseFloat(form.price),
-        level: parseInt(form.level),
-        language: form.language,
-      };
-      console.log("[CoursesPage] handleEdit payload:", editPayload);
       await lmsFetch<unknown>(
         `/Course/${selected.id}`,
         {
@@ -817,14 +609,13 @@ export default function CoursesPage() {
       );
       setModal(null);
       flash("Course updated!");
-      load();
+      refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to update course");
     } finally {
       setSaving(false);
     }
   };
-
   const handleDelete = async () => {
     if (!selected || !token) return;
     setSaving(true);
@@ -832,7 +623,7 @@ export default function CoursesPage() {
       await coursesApi.delete(selected.id, token);
       setModal(null);
       flash("Course deleted.");
-      load();
+      refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -845,7 +636,7 @@ export default function CoursesPage() {
     try {
       await coursesApi.publish(c.id, token);
       flash("Published!");
-      load();
+      refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed");
     }
@@ -856,12 +647,26 @@ export default function CoursesPage() {
     try {
       await coursesApi.archive(c.id, token);
       flash("Archived.");
-      load();
+      refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed");
     }
   };
+  const [enrolledCourseIds, setEnrolledCourseIds] = useState<Set<string>>(
+    new Set(),
+  );
 
+  useEffect(() => {
+    if (!token || !isStudent) return; // ← only fetch for students
+    enrollmentsApi
+      .getMyEnrollments(token)
+      .then((enrollments) =>
+        setEnrolledCourseIds(
+          new Set(enrollments?.map((e) => e.courseId) ?? []),
+        ),
+      )
+      .catch(console.error);
+  }, [token, isStudent]);
   // ── Filtering ──────────────────────────────────────────────────────────────
   const filtered = courses.filter((c) => {
     const q = search.toLowerCase();
@@ -906,13 +711,13 @@ export default function CoursesPage() {
     },
     {
       label: "Sections",
-      value: courses.reduce((a, c) => a + c.sectionCount, 0),
+      value: courses.reduce((a, c) => a + (c.sectionCount ?? 0), 0),
       color: "text-gray-700",
       bg: "bg-gray-50",
     },
     {
       label: "Lessons",
-      value: courses.reduce((a, c) => a + c.lessonCount, 0),
+      value: courses.reduce((a, c) => a + (c.lessonCount ?? 0), 0),
       color: "text-gray-700",
       bg: "bg-gray-50",
     },
@@ -1032,22 +837,25 @@ export default function CoursesPage() {
               {courses.length} course{courses.length !== 1 ? "s" : ""} total
             </p>
           </div>
-          <Btn variant="primary" size="md" onClick={openCreate}>
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2.5}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            New Course
-          </Btn>
+          {/* Header — only show New Course button to admins/instructors */}
+          {canManage && (
+            <Btn variant="primary" size="md" onClick={openCreate}>
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2.5}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              New Course
+            </Btn>
+          )}
         </div>
 
         {error && <ErrorBanner msg={error} onDismiss={() => setError(null)} />}
@@ -1216,16 +1024,27 @@ export default function CoursesPage() {
             {filtered.length > 0 && viewMode === "grid" && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filtered.map((c) => (
-                  <CourseGridCard
+                  <CourseCard
                     key={c.id}
                     course={c}
-                    onEdit={openEdit}
-                    onDelete={(c) => {
-                      setSelected(c);
-                      setModal("delete");
+                    isEnrolled={enrolledCourseIds.has(c.id)}
+                    onEnroll={async (c) => {
+                      await enrollmentsApi.enroll(c.id, token!);
+                      setEnrolledCourseIds((prev) => new Set([...prev, c.id]));
+                      flash("Enrolled successfully!");
                     }}
-                    onPublish={handlePublish}
-                    onArchive={handleArchive}
+                    canManage={canManage}
+                    onEdit={canManage ? openEdit : undefined}
+                    onDelete={
+                      canManage
+                        ? (c) => {
+                            setSelected(c);
+                            setModal("delete");
+                          }
+                        : undefined
+                    }
+                    onPublish={canManage ? handlePublish : undefined}
+                    onArchive={canManage ? handleArchive : undefined}
                   />
                 ))}
               </div>
@@ -1257,7 +1076,6 @@ export default function CoursesPage() {
                           icon
                         )}
                       </div>
-
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-gray-900 text-sm truncate">
@@ -1291,8 +1109,9 @@ export default function CoursesPage() {
                         </div>
                       </div>
 
+                      {/* List view — same gate on each action button */}
                       <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                        {c.status !== "Published" && (
+                        {canManage && c.status !== "Published" && (
                           <Btn
                             variant="ghost"
                             size="sm"
@@ -1301,7 +1120,7 @@ export default function CoursesPage() {
                             Publish
                           </Btn>
                         )}
-                        {c.status === "Published" && (
+                        {canManage && c.status === "Published" && (
                           <Btn
                             variant="ghost"
                             size="sm"
@@ -1310,23 +1129,27 @@ export default function CoursesPage() {
                             Archive
                           </Btn>
                         )}
-                        <Btn
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => openEdit(c)}
-                        >
-                          Edit
-                        </Btn>
-                        <Btn
-                          variant="danger"
-                          size="sm"
-                          onClick={() => {
-                            setSelected(c);
-                            setModal("delete");
-                          }}
-                        >
-                          Delete
-                        </Btn>
+                        {canManage && (
+                          <Btn
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openEdit(c)}
+                          >
+                            Edit
+                          </Btn>
+                        )}
+                        {canManage && (
+                          <Btn
+                            variant="danger"
+                            size="sm"
+                            onClick={() => {
+                              setSelected(c);
+                              setModal("delete");
+                            }}
+                          >
+                            Delete
+                          </Btn>
+                        )}
                       </div>
                     </div>
                   );

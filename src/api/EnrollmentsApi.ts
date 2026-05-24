@@ -38,6 +38,32 @@ export interface EnrollmentSection {
 export interface EnrollmentDetails extends Enrollment {
   certificateUrl: string | null;
   sections: EnrollmentSection[];
+  certificateIssuedAt?: string | null;
+  certificateId?: string | null;
+}
+
+export interface CourseStudentEnrollment {
+  enrollmentId: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  status: string;
+  progressPercentage: number;
+  completedLessons: number;
+  totalLessons: number;
+  totalWatchedSeconds: number;
+  hasCertificate: boolean;
+  enrolledAt: string;
+  completedAt: string | null;
+}
+
+export interface CourseEnrollments {
+  courseId: string;
+  courseTitle: string;
+  totalEnrollments: number;
+  completedEnrollments: number;
+  activeEnrollments: number;
+  enrollments: CourseStudentEnrollment[];
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -61,4 +87,11 @@ export const enrollmentsApi = {
   /** GET /api/enrollments/{id} — full breakdown with lesson progress */
   getById: (id: string, token: string) =>
     lmsFetch<EnrollmentDetails>(`/enrollments/${id}`, {}, token),
+
+  /**
+   * GET /api/enrollments/course/{courseId}
+   * Instructors: own courses only. Admins/SuperAdmins: any course.
+   */
+  getByCourse: (courseId: string, token: string) =>
+    lmsFetch<CourseEnrollments>(`/enrollments/course/${courseId}`, {}, token),
 };
