@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import GoogleLoginButton from "./Google";
 
 interface FormState {
   email: string;
@@ -12,6 +13,19 @@ interface FormErrors {
   password?: string;
 }
 
+// ─── Shared field style helper ────────────────────────────────────────────────
+
+const fieldBase =
+  "w-full bg-white border rounded-xl px-4 py-3 text-gray-900 text-sm placeholder-gray-400 outline-none transition-all duration-200";
+
+const fieldClass = (focused: boolean, err?: string) => {
+  if (err) return `${fieldBase} border-red-400 ring-2 ring-red-100`;
+  if (focused) return `${fieldBase} border-[#6d28d9] ring-2 ring-purple-100`;
+  return `${fieldBase} border-gray-300 hover:border-gray-400`;
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 const LoginPage: React.FC = () => {
   const { login, isLoading, error, clearError, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -22,28 +36,22 @@ const LoginPage: React.FC = () => {
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAuthenticated) navigate("/dashboard", { replace: true });
+    if (isAuthenticated) navigate("/profile", { replace: true });
   }, [isAuthenticated, navigate]);
 
-  useEffect(() => {
-    return () => clearError();
-  }, [clearError]);
-
-  // ── Validation ────────────────────────────────────────────────────────────
+  useEffect(() => () => clearError(), [clearError]);
 
   const validate = (): boolean => {
     const errs: FormErrors = {};
     if (!form.email.trim()) errs.email = "Email is required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      errs.email = "Enter a valid email";
+      errs.email = "Enter a valid email address";
     if (!form.password) errs.password = "Password is required";
     else if (form.password.length < 6)
       errs.password = "Password must be at least 6 characters";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
-
-  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -59,155 +67,213 @@ const LoginPage: React.FC = () => {
     await login({ email: form.email, password: form.password });
   };
 
-  const fillDemo = () => {
-    setForm({ email: "demo@lms.com", password: "password" });
-    setErrors({});
-    clearError();
-  };
-
-  // ── Field helper ─────────────────────────────────────────────────────────
-
-  const fieldClass = (field: string, err?: string) =>
-    `w-full bg-[#13161d] border rounded-xl px-4 py-3 text-slate-200 text-sm placeholder-slate-600 outline-none transition-all duration-200 ${
-      err
-        ? "border-red-500/70 focus:border-red-500"
-        : focusedField === field
-          ? "border-amber-400/60 ring-2 ring-amber-400/10"
-          : "border-white/8 hover:border-white/15"
-    }`;
-
   return (
-    <div className="min-h-screen bg-[#0d0f14] flex font-sans">
+    <div className="lf-login min-h-screen bg-white flex">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
-        * { font-family: 'DM Sans', sans-serif; }
-        .font-display { font-family: 'Syne', sans-serif; }
-        .grid-bg {
-          background-image:
-            linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-          background-size: 50px 50px;
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(-16px); }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=DM+Sans:wght@400;500;600&display=swap');
+        .lf-login * { font-family: 'DM Sans', sans-serif; }
+        .lf-login .font-display { font-family: 'Outfit', sans-serif; }
+
+        @keyframes lf-slide-in {
+          from { opacity: 0; transform: translateX(20px); }
           to   { opacity: 1; transform: translateX(0); }
         }
-        .animate-slideIn { animation: slideIn 0.5s ease forwards; }
-        @keyframes shake {
+        .lf-slide-in { animation: lf-slide-in 0.5s cubic-bezier(.4,0,.2,1) forwards; }
+
+        @keyframes lf-shake {
           0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-6px); }
-          75% { transform: translateX(6px); }
+          20%       { transform: translateX(-6px); }
+          60%       { transform: translateX(6px); }
+          80%       { transform: translateX(-3px); }
         }
-        .animate-shake { animation: shake 0.3s ease; }
+        .lf-shake { animation: lf-shake 0.4s ease; }
+
+        @keyframes lf-fade-up {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .lf-fade-1 { animation: lf-fade-up 0.5s ease forwards 0.05s; opacity: 0; }
+        .lf-fade-2 { animation: lf-fade-up 0.5s ease forwards 0.15s; opacity: 0; }
+        .lf-fade-3 { animation: lf-fade-up 0.5s ease forwards 0.25s; opacity: 0; }
+        .lf-fade-4 { animation: lf-fade-up 0.5s ease forwards 0.35s; opacity: 0; }
+
         input:-webkit-autofill {
-          -webkit-box-shadow: 0 0 0 30px #13161d inset !important;
-          -webkit-text-fill-color: #e2e8f0 !important;
+          -webkit-box-shadow: 0 0 0 30px #fff inset !important;
+          -webkit-text-fill-color: #111827 !important;
+        }
+
+        .lf-divider::before,
+        .lf-divider::after {
+          content: "";
+          flex: 1;
+          height: 1px;
+          background: #e5e7eb;
+        }
+        .lf-divider { display: flex; align-items: center; gap: 12px; }
+
+        .lf-panel-dot {
+          width: 6px; height: 6px; border-radius: 50%; background: #6d28d9; opacity: 0.4;
         }
       `}</style>
 
-      {/* ── Left Panel ── */}
-      <div className="hidden lg:flex flex-col justify-between w-2/5 xl:w-1/2 bg-[#0f1117] border-r border-white/5 p-12 relative overflow-hidden">
-        <div className="grid-bg absolute inset-0 opacity-60" />
-        {/* Glow */}
-        <div className="absolute bottom-1/3 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-amber-400/8 blur-[100px]" />
+      {/* ── Left panel (decorative) ── */}
+      <div className="hidden lg:flex flex-col w-[480px] xl:w-[520px] shrink-0 bg-gradient-to-br from-[#f5f3ff] via-[#ede9fe] to-[#ddd6fe] p-12 relative overflow-hidden">
+        {/* Grid texture */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(109,40,217,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(109,40,217,.06) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+          }}
+        />
 
+        {/* Blobs */}
+        <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full bg-[#6d28d9]/10 blur-3xl pointer-events-none" />
+        <div className="absolute top-20 right-0 w-56 h-56 rounded-full bg-white/50 blur-3xl pointer-events-none" />
+
+        {/* Logo */}
         <div className="relative z-10">
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center">
+          <Link to="/" className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#6d28d9] flex items-center justify-center shadow-lg shadow-purple-200">
               <svg
-                className="w-4.5 h-4.5 text-[#0d0f14]"
+                className="w-5 h-5 text-white"
                 fill="currentColor"
                 viewBox="0 0 20 20"
               >
                 <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3z" />
+                <path d="M9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0z" />
               </svg>
             </div>
-            <span className="font-display font-700 text-white text-xl">
-              LearnForge
+            <span className="font-display font-bold text-gray-900 text-xl">
+              Learn<span className="text-[#6d28d9]">Forge</span>
             </span>
           </Link>
         </div>
 
-        <div className="relative z-10 space-y-6">
-          <h2 className="font-display text-4xl font-800 text-white leading-tight">
-            Your Next
-            <br />
-            <span className="text-amber-400">Breakthrough</span>
-            <br />
-            Awaits.
-          </h2>
-          <p className="text-slate-400 leading-relaxed max-w-sm">
-            Sign in to access your personalized dashboard, continue your
-            courses, and track your progress.
+        {/* Center content */}
+        <div className="relative z-10 flex-1 flex flex-col justify-center space-y-8 mt-12">
+          <div>
+            <p className="text-[#6d28d9] text-xs font-semibold uppercase tracking-widest mb-3">
+              Welcome back
+            </p>
+            <h2 className="font-display font-extrabold text-4xl text-gray-900 leading-tight">
+              Your next
+              <br />
+              breakthrough
+              <br />
+              <span className="text-[#6d28d9]">starts here.</span>
+            </h2>
+          </div>
+
+          <p className="text-gray-500 leading-relaxed text-sm max-w-xs">
+            Sign in to access your dashboard, continue your courses, and track
+            your learning progress.
           </p>
 
-          {/* Metrics */}
-          <div className="grid grid-cols-2 gap-4 pt-4">
+          {/* Stats grid */}
+          <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Active Courses", value: "2,400+" },
-              { label: "Expert Instructors", value: "180+" },
-              { label: "Learners Worldwide", value: "120K+" },
-              { label: "Completion Rate", value: "98%" },
+              { label: "Courses", value: "2,400+" },
+              { label: "Instructors", value: "180+" },
+              { label: "Learners", value: "120K+" },
+              { label: "Completion", value: "98%" },
             ].map((m) => (
               <div
                 key={m.label}
-                className="bg-white/3 border border-white/5 rounded-xl p-4"
+                className="bg-white/70 backdrop-blur-sm border border-white rounded-xl p-4 shadow-sm"
               >
-                <div className="font-display text-xl font-bold text-amber-400">
+                <div className="font-display font-extrabold text-xl text-[#6d28d9]">
                   {m.value}
                 </div>
-                <div className="text-xs text-slate-500 mt-0.5">{m.label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{m.label}</div>
               </div>
             ))}
           </div>
+
+          {/* Testimonial */}
+          <div className="bg-white/70 backdrop-blur-sm border border-white rounded-2xl p-5 shadow-sm">
+            <div className="flex gap-0.5 mb-3">
+              {[...Array(5)].map((_, i) => (
+                <svg
+                  key={i}
+                  className="w-4 h-4 text-amber-400"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+              ))}
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed italic">
+              "LearnForge completely transformed my career. Landed my dream job
+              at Stripe within 4 months."
+            </p>
+            <div className="flex items-center gap-2.5 mt-4">
+              <div className="w-8 h-8 rounded-full bg-[#6d28d9] flex items-center justify-center text-white text-xs font-bold">
+                SC
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-800">
+                  Sarah Chen
+                </p>
+                <p className="text-[11px] text-gray-400">
+                  Frontend Engineer · Stripe
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="relative z-10 text-xs text-slate-600">
-          © 2025 LearnForge · All rights reserved
+        <div className="relative z-10 text-xs text-gray-400 mt-8">
+          © 2026 LearnForge · All rights reserved
         </div>
       </div>
 
-      {/* ── Right Panel (Form) ── */}
-      <div className="flex-1 flex items-center justify-center p-6 relative">
-        <div className="absolute inset-0 grid-bg lg:hidden" />
+      {/* ── Right panel (form) ── */}
+      <div className="flex-1 flex items-center justify-center p-6 bg-white relative">
+        {/* Subtle pattern on mobile */}
+        <div
+          className="absolute inset-0 lg:hidden pointer-events-none"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, #e5e7eb 1px, transparent 0)",
+            backgroundSize: "24px 24px",
+          }}
+        />
 
-        <div className="w-full max-w-md animate-slideIn relative z-10">
+        <div className="lf-slide-in w-full max-w-[400px] relative z-10">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="w-7 h-7 rounded-md bg-amber-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-[#6d28d9] flex items-center justify-center">
               <svg
-                className="w-4 h-4 text-[#0d0f14]"
+                className="w-4 h-4 text-white"
                 fill="currentColor"
                 viewBox="0 0 20 20"
               >
                 <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3z" />
               </svg>
             </div>
-            <span className="font-display font-700 text-white">LearnForge</span>
+            <span className="font-display font-bold text-gray-900">
+              Learn<span className="text-[#6d28d9]">Forge</span>
+            </span>
           </div>
 
-          <div className="mb-8">
-            <h1 className="font-display text-3xl font-800 text-white mb-2">
-              Welcome back
+          {/* Heading */}
+          <div className="lf-fade-1 mb-8">
+            <h1 className="font-display font-extrabold text-3xl text-gray-900 mb-1.5">
+              Welcome back 👋
             </h1>
-            <p className="text-slate-400 text-sm">
+            <p className="text-gray-500 text-sm">
               Sign in to continue your learning journey.
             </p>
           </div>
 
-          {/* Demo hint */}
-          <button
-            onClick={fillDemo}
-            className="w-full mb-6 text-xs text-center text-amber-400/70 hover:text-amber-400 transition-colors py-2 border border-amber-400/15 hover:border-amber-400/30 rounded-lg"
-          >
-            🪄 Fill demo credentials (demo@lms.com / password)
-          </button>
-
           {/* Global error */}
           {error && (
-            <div className="mb-5 flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 animate-shake">
+            <div className="lf-shake mb-5 flex items-center gap-2.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
               <svg
-                className="w-4 h-4 shrink-0"
+                className="w-4 h-4 shrink-0 text-red-500"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -225,12 +291,12 @@ const LoginPage: React.FC = () => {
 
           <form onSubmit={handleSubmit} noValidate className="space-y-5">
             {/* Email */}
-            <div>
-              <label className="block text-sm text-slate-400 mb-1.5 font-medium">
+            <div className="lf-fade-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Email address
               </label>
               <div className="relative">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                   <svg
                     className="w-4 h-4"
                     fill="none"
@@ -241,7 +307,7 @@ const LoginPage: React.FC = () => {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207"
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
                     />
                   </svg>
                 </div>
@@ -254,13 +320,13 @@ const LoginPage: React.FC = () => {
                   onBlur={() => setFocusedField(null)}
                   placeholder="you@example.com"
                   autoComplete="email"
-                  className={`${fieldClass("email", errors.email)} pl-10`}
+                  className={`${fieldClass(focusedField === "email", errors.email)} pl-10`}
                 />
               </div>
               {errors.email && (
-                <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1">
+                <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
                   <svg
-                    className="w-3.5 h-3.5"
+                    className="w-3.5 h-3.5 shrink-0"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -278,20 +344,20 @@ const LoginPage: React.FC = () => {
             </div>
 
             {/* Password */}
-            <div>
+            <div className="lf-fade-3">
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm text-slate-400 font-medium">
+                <label className="text-sm font-semibold text-gray-700">
                   Password
                 </label>
                 <a
                   href="#"
-                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                  className="text-xs font-medium text-[#6d28d9] hover:text-[#5b21b6] transition-colors"
                 >
                   Forgot password?
                 </a>
               </div>
               <div className="relative">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                   <svg
                     className="w-4 h-4"
                     fill="none"
@@ -315,12 +381,13 @@ const LoginPage: React.FC = () => {
                   onBlur={() => setFocusedField(null)}
                   placeholder="••••••••"
                   autoComplete="current-password"
-                  className={`${fieldClass("password", errors.password)} pl-10 pr-10`}
+                  className={`${fieldClass(focusedField === "password", errors.password)} pl-10 pr-11`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass((v) => !v)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  tabIndex={-1}
                 >
                   {showPass ? (
                     <svg
@@ -360,9 +427,9 @@ const LoginPage: React.FC = () => {
                 </button>
               </div>
               {errors.password && (
-                <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1">
+                <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
                   <svg
-                    className="w-3.5 h-3.5"
+                    className="w-3.5 h-3.5 shrink-0"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -380,68 +447,57 @@ const LoginPage: React.FC = () => {
             </div>
 
             {/* Submit */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-amber-400 text-[#0d0f14] font-semibold py-3.5 rounded-xl hover:bg-amber-300 transition-all duration-200 text-sm disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
-              style={{ boxShadow: "0 0 30px rgba(245,158,11,0.2)" }}
-            >
-              {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-[#0d0f14]/30 border-t-[#0d0f14] rounded-full animate-spin" />
-                  Signing in…
-                </>
-              ) : (
-                <>
-                  Sign in
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17 8l4 4m0 0l-4 4m4-4H3"
-                    />
-                  </svg>
-                </>
-              )}
-            </button>
+            <div className="lf-fade-4">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-[#6d28d9] text-white font-bold py-3.5 rounded-xl hover:bg-[#5b21b6] active:scale-[0.99] transition-all duration-150 text-sm disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-purple-200"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Signing in…
+                  </>
+                ) : (
+                  <>
+                    Sign in to LearnForge
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2.5}
+                        d="M17 8l4 4m0 0l-4 4m4-4H3"
+                      />
+                    </svg>
+                  </>
+                )}
+              </button>
+            </div>
           </form>
 
           {/* Divider */}
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-white/5" />
-            <span className="text-xs text-slate-600">or</span>
-            <div className="flex-1 h-px bg-white/5" />
+          <div className="lf-divider my-6">
+            <span className="text-xs text-gray-400 font-medium whitespace-nowrap">
+              or continue with
+            </span>
           </div>
 
-          {/* OAuth placeholders */}
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { name: "Google", icon: "G" },
-              { name: "GitHub", icon: "⌥" },
-            ].map((p) => (
-              <button
-                key={p.name}
-                className="flex items-center justify-center gap-2 border border-white/8 hover:border-white/15 rounded-xl py-3 text-sm text-slate-300 hover:text-white hover:bg-white/3 transition-all duration-200"
-              >
-                <span className="font-bold text-base">{p.icon}</span>
-                {p.name}
-              </button>
-            ))}
-          </div>
+          {/* Google */}
+          <GoogleLoginButton />
 
-          <p className="text-center mt-7 text-sm text-slate-500">
+          {/* Footer link */}
+          <p className="text-center mt-8 text-sm text-gray-500">
             Don't have an account?{" "}
             <Link
               to="/register"
-              className="text-amber-400 hover:text-amber-300 font-medium transition-colors"
+              className="font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition-colors"
             >
-              Create one free →
+              Sign up free →
             </Link>
           </p>
         </div>
