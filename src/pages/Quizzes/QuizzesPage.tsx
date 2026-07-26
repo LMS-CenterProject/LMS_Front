@@ -43,6 +43,7 @@ interface QuizAttempt {
   score: number;
   passed: boolean;
   submittedAt: string;
+  // FIX: answers now always stored as { questionId, answerId: string[] }[]
   answers: { questionId: string; answerId: string[] }[];
 }
 
@@ -67,8 +68,6 @@ interface DraftQuestion {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Backend returns question type as string ("SingleChoice" | "MultiChoice" | "TrueFalse")
-// from GET endpoints but expects numeric (0 | 1 | 2) on POST/PUT.
 function normalizeQuestionType(type: number | string): number {
   if (typeof type === "number") return type;
   if (type === "SingleChoice") return 0;
@@ -79,17 +78,12 @@ function normalizeQuestionType(type: number | string): number {
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 const api = {
-  // ── Courses ──────────────────────────────────────────────────────────────────
-  // GET /Course/my-courses — returns only the current instructor's courses.
-  // Students use GET /Course (all published courses).
   getMyCourses: (token: string) =>
     lmsFetch<Course[]>("/Course/my-courses", {}, token),
   getCourses: (token: string) => lmsFetch<Course[]>("/Course", {}, token),
 
-  // ── Quizzes ───────────────────────────────────────────────────────────────────
   getQuizzesByCourse: (courseId: string, token: string) =>
     lmsFetch<Quiz[]>(`/Quiz/course/${courseId}`, {}, token),
-  // POST /Quiz returns a plain string UUID — handled via lmsPost below.
   updateQuiz: (
     id: string,
     body: {
@@ -108,7 +102,6 @@ const api = {
   deleteQuiz: (id: string, token: string) =>
     lmsFetch<void>(`/Quiz/${id}`, { method: "DELETE" }, token),
 
-  // ── Questions ─────────────────────────────────────────────────────────────────
   getQuestionsByQuiz: (quizId: string, token: string) =>
     lmsFetch<Question[]>(`/Question/quiz/${quizId}`, {}, token),
   deleteQuestion: (id: string, token: string) =>
@@ -119,23 +112,61 @@ const api = {
       {},
       token,
     ),
-  // ── Answers ───────────────────────────────────────────────────────────────────
+
   getAnswersByQuestion: (questionId: string, token: string) =>
     lmsFetch<Answer[]>(`/Answer/question/${questionId}`, {}, token),
   deleteAnswer: (id: string, token: string) =>
     lmsFetch<void>(`/Answer/${id}`, { method: "DELETE" }, token),
 
-  // ── Attempts ──────────────────────────────────────────────────────────────────
   getMyAttempts: (token: string) =>
     lmsFetch<
       {
-        id: string;
+        attemptId: string;
         quizId: string;
+        quizTitle: string;
         score: number;
         passed: boolean;
         attemptedAt: string;
+        questions: {
+          questionId: string;
+          questionText: string;
+          answerId: string;
+          answerText: string;
+          isCorrect: boolean;
+        }[];
       }[]
     >("/QuizAttempt/my-attempts", {}, token),
+  getQuizStats: (quizId: string, token: string) =>
+    lmsFetch<{
+      quizId: string;
+      totalAttempts: number;
+      passedCount: number;
+      failedCount: number;
+      averageScore: number;
+    }>(`/QuizAttempt/quiz/${quizId}/stats`, {}, token),
+  getQuizStudents: (quizId: string, token: string) =>
+    lmsFetch<{
+      quizId: string;
+      totalStudents: number;
+      totalAttempts: number;
+      students: {
+        studentId: string;
+        studentName: string;
+        attempts: {
+          attemptId: string;
+          score: number;
+          passed: boolean;
+          attemptedAt: string;
+          answers: {
+            questionId: string;
+            questionText: string;
+            answerId: string;
+            answerText: string;
+            isCorrect: boolean;
+          }[];
+        }[];
+      }[];
+    }>(`/QuizAttempt/quiz/${quizId}/students`, {}, token),
   submitAttempt: (
     body: {
       quizId: string;
@@ -156,8 +187,7 @@ const api = {
 };
 
 // ─── Raw POST helper ──────────────────────────────────────────────────────────
-// lmsFetch swallows ProblemDetails; this surfaces the real backend error message.
-// POST /Quiz and POST /Question both return a plain string UUID as their response body.
+
 async function lmsPost<T>(
   path: string,
   body: unknown,
@@ -426,7 +456,6 @@ function QuizBuilder({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Quiz details
   const [courseId, setCourseId] = useState(editingQuiz?.courseId ?? "");
   const [title, setTitle] = useState(editingQuiz?.title ?? "");
   const [passScore, setPassScore] = useState(
@@ -436,16 +465,10 @@ function QuizBuilder({
     String(editingQuiz?.timeLimitMinutes ?? 30),
   );
 
-  // Created quiz (after step 1 saves)
   const [quiz, setQuiz] = useState<Quiz | null>(editingQuiz ?? null);
-
-  // Draft questions
   const [questions, setQuestions] = useState<DraftQuestion[]>([]);
   const [loadingQs, setLoadingQs] = useState(!!editingQuiz);
 
-  // Load existing questions when editing.
-  // NOTE: GET /Question/quiz returns type as a string ("SingleChoice" etc.) —
-  //       normalizeQuestionType converts it back to the numeric enum the UI expects.
   useEffect(() => {
     if (!editingQuiz) return;
     (async () => {
@@ -542,7 +565,6 @@ function QuizBuilder({
       }),
     );
 
-  // POST /Quiz returns a plain string UUID, not a Quiz object.
   const handleSaveDetails = async () => {
     if (!courseId || !title.trim()) {
       setError("Course and title are required.");
@@ -612,7 +634,6 @@ function QuizBuilder({
           },
           token,
         );
-        // Delete-and-recreate is the simplest edit strategy given the API surface.
         const existingQs = await api.getQuestionsByQuiz(quiz.id, token);
         for (const eq of existingQs) {
           const existingAs = await api.getAnswersByQuestion(eq.id, token);
@@ -626,8 +647,6 @@ function QuizBuilder({
           1,
           Math.round(isNaN(dq.points) ? 1 : dq.points),
         );
-
-        // POST /Question returns a plain string UUID.
         const questionId = await lmsPost<string>(
           "/Question",
           {
@@ -642,7 +661,6 @@ function QuizBuilder({
           throw new Error("Question created but backend returned no ID");
 
         for (const da of dq.answers) {
-          // POST /Answer returns a plain string UUID (ignored — we don't need it).
           await lmsPost<string>(
             "/Answer",
             {
@@ -657,9 +675,7 @@ function QuizBuilder({
       onDone();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(
-        msg || "Failed to save quiz. Check the browser console for details.",
-      );
+      setError(msg || "Failed to save quiz.");
     } finally {
       setSaving(false);
     }
@@ -1028,13 +1044,100 @@ function QuestionCard({
 
 // ─── STUDENT: Quiz List ───────────────────────────────────────────────────────
 
+// Shape returned by GET /QuizAttempt/my-attempts
+interface MyAttemptRecord {
+  attemptId: string;
+  quizId: string;
+  quizTitle: string;
+  score: number;
+  passed: boolean;
+  attemptedAt: string;
+  questions: {
+    questionId: string;
+    questionText: string;
+    answerId: string;
+    answerText: string;
+    isCorrect: boolean;
+  }[];
+}
+
+// Fetch full answer options for each question in an attempt record,
+// then merge with the student's chosen answers to produce the complete
+// QuizAttempt + QuestionWithAnswers[] needed by QuizResult.
+//
+// Flow:
+//   1. Group attempt rows by questionId → know what the student chose
+//   2. Fetch GET /Answer/question/{id} for each question → full option list
+//      with isCorrect flags (instructor sees these)
+//   3. Build QuestionWithAnswers with ALL options; mark chosen ones via attempt.answers
+//   4. Question-level correctness = chosen set exactly matches correct set
+async function buildResultFromAttemptRecord(
+  record: MyAttemptRecord,
+  userId: string,
+  token: string,
+): Promise<{ attempt: QuizAttempt; questions: QuestionWithAnswers[] }> {
+  // Step 1 — group chosen answers by questionId
+  const chosenMap = new Map<string, { text: string; chosenAnswerIds: string[] }>();
+  for (const row of record.questions) {
+    if (!chosenMap.has(row.questionId)) {
+      chosenMap.set(row.questionId, { text: row.questionText, chosenAnswerIds: [] });
+    }
+    chosenMap.get(row.questionId)!.chosenAnswerIds.push(row.answerId);
+  }
+
+  // Step 2 — fetch full answer list for every question in parallel
+  const questions: QuestionWithAnswers[] = await Promise.all(
+    Array.from(chosenMap.entries()).map(async ([qId, q], idx) => {
+      let allAnswers: Answer[] = [];
+      try {
+        allAnswers = await api.getAnswersByQuestion(qId, token);
+      } catch {
+        // Fallback: build synthetic answers from what we know
+        // (only the chosen answer, with isCorrect from the attempt)
+        const chosenRows = record.questions.filter((r) => r.questionId === qId);
+        allAnswers = chosenRows.map((r) => ({
+          id: r.answerId,
+          questionId: qId,
+          text: r.answerText,
+          isCorrect: r.isCorrect,
+        }));
+      }
+      return {
+        id: qId,
+        quizId: record.quizId,
+        text: q.text,
+        type: 0,
+        points: 1,
+        answers: allAnswers,
+      };
+    }),
+  );
+
+  // Step 3 — build the attempt with chosen answer IDs per question
+  const attempt: QuizAttempt = {
+    id: record.attemptId,
+    quizId: record.quizId,
+    userId,
+    score: record.score,
+    passed: record.passed,
+    submittedAt: record.attemptedAt,
+    answers: Array.from(chosenMap.entries()).map(([qId, q]) => ({
+      questionId: qId,
+      answerId: q.chosenAnswerIds,
+    })),
+  };
+
+  return { attempt, questions };
+}
+
 function StudentQuizList({ token, userId }: { token: string; userId: string }) {
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState("");
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-  const [attempts, setAttempts] = useState<Record<string, QuizAttempt | null>>(
-    {},
-  );
+  // keyed by quizId — null means not attempted
+  const [attemptRecords, setAttemptRecords] = useState<Record<string, MyAttemptRecord | null>>({});
+  // for attempts made THIS session (score + full question data already in memory)
+  const [sessionResults, setSessionResults] = useState<Record<string, { attempt: QuizAttempt; questions: QuestionWithAnswers[] }>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [takingQuiz, setTakingQuiz] = useState<Quiz | null>(null);
@@ -1048,50 +1151,38 @@ function StudentQuizList({ token, userId }: { token: string; userId: string }) {
     api
       .getMyEnrolledCourses(token)
       .then((enrollments) =>
-        setCourses(
-          enrollments.map((e) => ({ id: e.courseId, title: e.courseTitle })),
-        ),
+        setCourses(enrollments.map((e) => ({ id: e.courseId, title: e.courseTitle }))),
       )
       .catch(console.error);
   }, [token, userId]);
-  useEffect(() => {
-    if (!selectedCourse) {
-      setQuizzes([]);
-      setAttempts({});
-      return;
-    }
+
+  const loadQuizzesAndAttempts = useCallback(async (courseId: string) => {
+    if (!courseId) { setQuizzes([]); setAttemptRecords({}); return; }
     setLoading(true);
-    (async () => {
-      try {
-        const [qs, myAttempts] = await Promise.all([
-          api.getQuizzesByCourse(selectedCourse, token),
-          api.getMyAttempts(token).catch(() => []),
-        ]);
-        const arr = Array.isArray(qs) ? qs : [];
-        setQuizzes(arr);
-        const attemptMap: Record<string, QuizAttempt | null> = {};
-        for (const q of arr) {
-          const found = (myAttempts ?? []).find((a) => a.quizId === q.id);
-          attemptMap[q.id] = found
-            ? {
-                id: found.id,
-                quizId: found.quizId,
-                userId,
-                score: found.score,
-                passed: found.passed,
-                submittedAt: found.attemptedAt,
-                answers: [],
-              }
-            : null;
-        }
-        setAttempts(attemptMap);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Failed to load quizzes");
-      } finally {
-        setLoading(false);
+    try {
+      const [qs, myAttempts] = await Promise.all([
+        api.getQuizzesByCourse(courseId, token),
+        api.getMyAttempts(token).catch(() => [] as MyAttemptRecord[]),
+      ]);
+      const arr = Array.isArray(qs) ? qs : [];
+      setQuizzes(arr);
+      const map: Record<string, MyAttemptRecord | null> = {};
+      for (const q of arr) {
+        // Use the most recent attempt for this quiz
+        const found = (myAttempts as MyAttemptRecord[])
+          .filter((a) => a.quizId === q.id)
+          .sort((a, b) => new Date(b.attemptedAt).getTime() - new Date(a.attemptedAt).getTime())[0] ?? null;
+        map[q.id] = found;
       }
-    })();
-  }, [selectedCourse, token, userId]);
+      setAttemptRecords(map);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load quizzes");
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { loadQuizzesAndAttempts(selectedCourse); }, [selectedCourse, loadQuizzesAndAttempts]);
 
   if (takingQuiz) {
     return (
@@ -1101,8 +1192,10 @@ function StudentQuizList({ token, userId }: { token: string; userId: string }) {
         userId={userId}
         onDone={(attempt, questions) => {
           setTakingQuiz(null);
+          setSessionResults((prev) => ({ ...prev, [takingQuiz.id]: { attempt, questions } }));
           setViewingResult({ quiz: takingQuiz, attempt, questions });
-          setAttempts((prev) => ({ ...prev, [takingQuiz.id]: attempt }));
+          // Refresh attempt records in the background so score shows immediately
+          loadQuizzesAndAttempts(selectedCourse);
         }}
         onBack={() => setTakingQuiz(null)}
       />
@@ -1110,16 +1203,12 @@ function StudentQuizList({ token, userId }: { token: string; userId: string }) {
   }
 
   if (viewingResult) {
-    return (
-      <QuizResult {...viewingResult} onBack={() => setViewingResult(null)} />
-    );
+    return <QuizResult {...viewingResult} onBack={() => setViewingResult(null)} />;
   }
 
   return (
     <div>
-      {error && (
-        <Toast type="error" msg={error} onDismiss={() => setError(null)} />
-      )}
+      {error && <Toast type="error" msg={error} onDismiss={() => setError(null)} />}
       <div className="mb-6">
         <label className="block text-xs font-black text-[#5c4c3d] mb-2 uppercase tracking-widest">
           Your Enrolled Courses
@@ -1131,18 +1220,13 @@ function StudentQuizList({ token, userId }: { token: string; userId: string }) {
         >
           <option value="">— Choose a course —</option>
           {courses.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.title}
-            </option>
+            <option key={c.id} value={c.id}>{c.title}</option>
           ))}
         </select>
       </div>
 
       {!selectedCourse ? (
-        <Empty
-          icon="📚"
-          msg="Select an enrolled course to see available quizzes."
-        />
+        <Empty icon="📚" msg="Select an enrolled course to see available quizzes." />
       ) : loading ? (
         <Spinner />
       ) : quizzes.length === 0 ? (
@@ -1150,67 +1234,44 @@ function StudentQuizList({ token, userId }: { token: string; userId: string }) {
       ) : (
         <div className="grid gap-4">
           {quizzes.map((q) => {
-            const attempt = attempts[q.id];
-            const hasAttempt = !!attempt;
+            const record = attemptRecords[q.id];
+            const hasAttempt = !!record;
+            const sessionResult = sessionResults[q.id];
             return (
               <div
                 key={q.id}
                 className={`bg-white rounded-2xl border p-5 flex items-center gap-5 transition-all
-                ${hasAttempt ? "border-[#e8e0d8] opacity-90" : "border-[#e8e0d8] hover:border-[#c84b31]/40 hover:shadow-lg hover:shadow-[#c84b31]/5"}`}
+                ${hasAttempt ? "border-[#e8e0d8]" : "border-[#e8e0d8] hover:border-[#c84b31]/40 hover:shadow-lg hover:shadow-[#c84b31]/5"}`}
               >
                 <div
                   className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0
-                  ${
-                    hasAttempt
-                      ? attempt?.passed
-                        ? "bg-emerald-100"
-                        : "bg-red-100"
-                      : "bg-gradient-to-br from-[#c84b31] to-[#e07054]"
-                  }`}
+                  ${hasAttempt ? (record!.passed ? "bg-emerald-100" : "bg-red-100") : "bg-gradient-to-br from-[#c84b31] to-[#e07054]"}`}
                 >
-                  {hasAttempt ? (attempt?.passed ? "✅" : "❌") : "🧩"}
+                  {hasAttempt ? (record!.passed ? "✅" : "❌") : "🧩"}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-[#1a1108] text-base">
-                    {q.title}
-                  </p>
+                  <p className="font-bold text-[#1a1108] text-base">{q.title}</p>
                   <div className="flex gap-4 mt-1.5 flex-wrap">
-                    <span className="text-xs text-[#9b8a7a]">
-                      ⏱ {q.timeLimitMinutes} min
-                    </span>
-                    <span className="text-xs text-[#9b8a7a]">
-                      🎯 Pass at {q.passScore}%
-                    </span>
+                    <span className="text-xs text-[#9b8a7a]">⏱ {q.timeLimitMinutes} min</span>
+                    <span className="text-xs text-[#9b8a7a]">🎯 Pass at {q.passScore}%</span>
                     {hasAttempt && (
-                      <span
-                        className={`text-xs font-bold ${attempt?.passed ? "text-emerald-600" : "text-red-600"}`}
-                      >
-                        Score: {attempt?.score}%
+                      <span className={`text-xs font-bold ${record!.passed ? "text-emerald-600" : "text-red-600"}`}>
+                        Score: {record!.score}%
                       </span>
                     )}
                   </div>
                 </div>
                 {hasAttempt ? (
                   <button
-                    onClick={() => {
-                      (async () => {
-                        const qs = await api.getQuestionsByQuiz(q.id, token);
-                        const withAnswers = await Promise.all(
-                          qs.map(async (qq) => ({
-                            ...qq,
-                            type: normalizeQuestionType(qq.type),
-                            answers: await api.getAnswersByQuestion(
-                              qq.id,
-                              token,
-                            ),
-                          })),
-                        );
-                        setViewingResult({
-                          quiz: q,
-                          attempt: attempt!,
-                          questions: withAnswers,
-                        });
-                      })();
+                    onClick={async () => {
+                      // Prefer session result (already has full question+answer data)
+                      if (sessionResult) {
+                        setViewingResult({ quiz: q, ...sessionResult });
+                      } else {
+                        // Fetch full answer options for each question, then show result
+                        const { attempt, questions } = await buildResultFromAttemptRecord(record!, userId, token);
+                        setViewingResult({ quiz: q, attempt, questions });
+                      }
                     }}
                     className="px-4 py-2 rounded-xl text-xs font-bold border border-[#e0d6cc] text-[#5c4c3d] hover:bg-[#f7f2ee] transition-colors shrink-0"
                   >
@@ -1256,6 +1317,21 @@ function StudentQuizTaker({
   const [error, setError] = useState<string | null>(null);
   const hasSubmitted = useRef(false);
 
+  const select = (questionId: string, answerId: string, type: number) => {
+    setSelections((prev) => {
+      if (type === 1) {
+        const cur = prev[questionId] ?? [];
+        return {
+          ...prev,
+          [questionId]: cur.includes(answerId)
+            ? cur.filter((x) => x !== answerId)
+            : [...cur, answerId],
+        };
+      }
+      return { ...prev, [questionId]: [answerId] };
+    });
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -1279,105 +1355,76 @@ function StudentQuizTaker({
     })();
   }, [quiz.id, token]);
 
-  const select = (questionId: string, answerId: string, type: number) => {
-    setSelections((prev) => {
-      if (type === 1) {
-        const cur = prev[questionId] ?? [];
-        return {
-          ...prev,
-          [questionId]: cur.includes(answerId)
-            ? cur.filter((x) => x !== answerId)
-            : [...cur, answerId],
-        };
-      }
-      return { ...prev, [questionId]: [answerId] };
-    });
-  };
-
-  const autoGrade = (
+  // submit receives qs and sels as direct parameters — no stale closure or ref timing issues.
+  const submit = async (
     qs: QuestionWithAnswers[],
     sels: Record<string, string[]>,
   ) => {
-    let earned = 0,
-      total = 0;
-    for (const q of qs) {
-      total += q.points;
-      const correctIds = q.answers.filter((a) => a.isCorrect).map((a) => a.id);
-      const chosen = sels[q.id] ?? [];
-      if (
-        correctIds.length === chosen.length &&
-        correctIds.every((id) => chosen.includes(id))
-      )
-        earned += q.points;
-    }
-    const pct = total > 0 ? Math.round((earned / total) * 100) : 0;
-    return { score: pct, passed: pct >= quiz.passScore };
-  };
-
-  const submit = useCallback(
-    async (forcedSels?: Record<string, string[]>) => {
-      if (hasSubmitted.current) return;
-      hasSubmitted.current = true;
-      const sels = forcedSels ?? selections;
-      setSubmitting(true);
-      setError(null);
-      try {
-        const { score, passed } = autoGrade(questions, sels);
-        let attempt: QuizAttempt;
-        try {
-          // Only send rows for questions the student actually answered.
-          // Sending a nil UUID for skipped questions causes a backend 400/500.
-          const answerRows: { questionId: string; answerId: string }[] = [];
-          for (const q of questions) {
-            for (const aid of sels[q.id] ?? []) {
-              answerRows.push({ questionId: q.id, answerId: aid });
-            }
-          }
-          const res = await api.submitAttempt(
-            { quizId: quiz.id, answers: answerRows },
-            token,
-          );
-          attempt = {
-            id: res.attemptId,
-            quizId: quiz.id,
-            userId,
-            score: res.score,
-            passed: res.passed,
-            submittedAt: new Date().toISOString(),
-            answers: questions.map((q) => ({
-              questionId: q.id,
-              answerId: sels[q.id] ?? [],
-            })),
-          };
-        } catch {
-          // Backend submit is currently unreliable (500) — fall back to client-side grading.
-          attempt = {
-            id: `local-${Date.now()}`,
-            quizId: quiz.id,
-            userId,
-            score,
-            passed,
-            submittedAt: new Date().toISOString(),
-            answers: questions.map((q) => ({
-              questionId: q.id,
-              answerId: sels[q.id] ?? [],
-            })),
-          };
+    if (hasSubmitted.current) return;
+    hasSubmitted.current = true;
+    setSubmitting(true);
+    setError(null);
+    try {
+      // Backend expects exactly ONE row per question (each questionId once).
+      // For single/true-false: the one chosen answerId.
+      // For multiple-choice: send only the first selected answer —
+      // the backend schema doesn't support multi-answer rows.
+      // Skip questions the student left unanswered entirely.
+      const answerRows: { questionId: string; answerId: string }[] = [];
+      for (const q of qs) {
+        const chosen = sels[q.id] ?? [];
+        if (chosen.length > 0) {
+          answerRows.push({ questionId: q.id, answerId: chosen[0] });
         }
-        // Always use client-side score so the review screen is accurate.
-        attempt.score = score;
-        attempt.passed = passed;
-        onDone(attempt, questions);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Submission failed");
-        hasSubmitted.current = false;
-      } finally {
-        setSubmitting(false);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    },
-    [questions, selections, quiz.id, userId, token],
-  );
+
+      // Store what the student selected (for the review screen)
+      const storedAnswers = qs.map((q) => ({
+        questionId: q.id,
+        answerId: sels[q.id] ?? [],
+      }));
+
+      // Submit to backend — use its score/passed as the source of truth.
+      // Client-side grading is unreliable because GET /Answer/question/{id}
+      // does not return isCorrect to students (would expose answers).
+      const res = await api.submitAttempt(
+        { quizId: quiz.id, answers: answerRows },
+        token,
+      );
+
+      // Re-fetch answers now that the attempt is recorded — the backend may
+      // now return isCorrect so the review screen can highlight correct answers.
+      // If it still hides isCorrect, the review will just show what was chosen.
+      const qsWithCorrect = await Promise.all(
+        qs.map(async (q) => {
+          try {
+            const freshAnswers = await api.getAnswersByQuestion(q.id, token);
+            return { ...q, answers: freshAnswers };
+          } catch {
+            return q;
+          }
+        }),
+      );
+
+      onDone(
+        {
+          id: res.attemptId,
+          quizId: quiz.id,
+          userId,
+          score: res.score,
+          passed: res.passed,
+          submittedAt: new Date().toISOString(),
+          answers: storedAnswers,
+        },
+        qsWithCorrect,
+      );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Submission failed");
+      hasSubmitted.current = false;
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) return <Spinner />;
   if (error) return <Toast type="error" msg={error} />;
@@ -1420,7 +1467,7 @@ function StudentQuizTaker({
         </div>
         <Timer
           minutes={quiz.timeLimitMinutes}
-          onExpire={() => submit(selections)}
+          onExpire={() => submit(questions, selections)}
         />
       </div>
 
@@ -1519,7 +1566,7 @@ function StudentQuizTaker({
           </button>
         ) : (
           <button
-            onClick={() => submit()}
+            onClick={() => submit(questions, selections)}
             disabled={submitting}
             className="px-5 py-2.5 rounded-xl bg-[#c84b31] text-white text-sm font-bold hover:bg-[#a83928] disabled:opacity-50 transition-all shadow-md shadow-[#c84b31]/30"
           >
@@ -1594,59 +1641,94 @@ function QuizResult({
       </h3>
       <div className="space-y-4 mb-8">
         {questions.map((q, idx) => {
+          // userAnswerIds = what the student actually selected
           const userAnswerIds: string[] =
-            (
-              attempt.answers as { questionId: string; answerId: string[] }[]
-            ).find((a) => a.questionId === q.id)?.answerId ?? [];
-          const correctIds = q.answers
-            .filter((a) => a.isCorrect)
-            .map((a) => a.id);
-          const isCorrect =
+            attempt.answers.find((a) => a.questionId === q.id)?.answerId ?? [];
+
+          // correctIds = ALL answer options that are correct for this question
+          const correctIds = q.answers.filter((a) => a.isCorrect).map((a) => a.id);
+
+          // Question is fully correct only if:
+          //   - student chose exactly the correct set (no extras, no missing)
+          const isFullyCorrect =
+            correctIds.length > 0 &&
             correctIds.length === userAnswerIds.length &&
             correctIds.every((id) => userAnswerIds.includes(id));
+
+          // Partial: student chose some correct answers but missed others,
+          // and didn't choose any wrong ones
+          const choseOnlyCorrect = userAnswerIds.every((id) => correctIds.includes(id));
+          const missedSomeCorrect = correctIds.some((id) => !userAnswerIds.includes(id));
+          const isPartial = !isFullyCorrect && choseOnlyCorrect && missedSomeCorrect;
+
+          const borderCls = isFullyCorrect
+            ? "border-emerald-200"
+            : isPartial
+            ? "border-amber-200"
+            : "border-red-200";
+          const headerBg = isFullyCorrect
+            ? "bg-emerald-50"
+            : isPartial
+            ? "bg-amber-50"
+            : "bg-red-50";
+          const icon = isFullyCorrect ? "✅" : isPartial ? "⚠️" : "❌";
+
           return (
-            <div
-              key={q.id}
-              className={`rounded-2xl border-2 overflow-hidden ${isCorrect ? "border-emerald-200" : "border-red-200"}`}
-            >
-              <div
-                className={`px-5 py-3 flex items-start gap-3 ${isCorrect ? "bg-emerald-50" : "bg-red-50"}`}
-              >
-                <span className="text-lg shrink-0">
-                  {isCorrect ? "✅" : "❌"}
-                </span>
-                <div>
+            <div key={q.id} className={`rounded-2xl border-2 overflow-hidden ${borderCls}`}>
+              <div className={`px-5 py-3 flex items-start gap-3 ${headerBg}`}>
+                <span className="text-lg shrink-0">{icon}</span>
+                <div className="flex-1">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-[#9b8a7a]">
                     Q{idx + 1} · {q.points} pt{q.points !== 1 ? "s" : ""}
                   </span>
-                  <p className="font-bold text-[#1a1108] text-sm mt-0.5">
-                    {q.text}
-                  </p>
+                  <p className="font-bold text-[#1a1108] text-sm mt-0.5">{q.text}</p>
+                  {isPartial && (
+                    <p className="text-[10px] text-amber-600 font-semibold mt-1">
+                      Partial — you missed some required answers
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="px-5 py-3 bg-white space-y-2">
                 {q.answers.map((a) => {
                   const userChose = userAnswerIds.includes(a.id);
-                  let cls = "border-[#f0ebe4] bg-[#fdf9f6] text-[#9b8a7a]";
-                  if (a.isCorrect && userChose)
-                    cls =
-                      "border-emerald-300 bg-emerald-50 text-emerald-800 font-semibold";
-                  else if (a.isCorrect)
-                    cls =
-                      "border-emerald-200 bg-emerald-50/60 text-emerald-700";
-                  else if (userChose)
+
+                  // Colour logic:
+                  //  ✓ green  — student chose it AND it's correct
+                  //  ✗ red    — student chose it AND it's wrong
+                  //  ○ amber  — student did NOT choose it BUT it's correct (missed)
+                  //  ○ grey   — student did NOT choose it AND it's wrong (irrelevant)
+                  let cls = "border-[#f0ebe4] bg-[#fdf9f6] text-[#9b8a7a]"; // grey
+                  if (userChose && a.isCorrect)
+                    cls = "border-emerald-300 bg-emerald-50 text-emerald-800 font-semibold";
+                  else if (userChose && !a.isCorrect)
                     cls = "border-red-300 bg-red-50 text-red-700";
+                  else if (!userChose && a.isCorrect)
+                    cls = "border-amber-300 bg-amber-50 text-amber-800";
+
+                  const marker = userChose
+                    ? a.isCorrect ? "✓" : "✗"
+                    : a.isCorrect ? "○" : "○";
+
                   return (
                     <div
                       key={a.id}
                       className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm ${cls}`}
                     >
-                      <span className="shrink-0 font-bold">
-                        {a.isCorrect ? "✓" : userChose ? "✗" : "○"}
-                      </span>
+                      <span className="shrink-0 font-bold">{marker}</span>
                       <span className="flex-1">{a.text}</span>
-                      {a.isCorrect && !userChose && (
+                      {userChose && a.isCorrect && (
                         <span className="ml-auto text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+                          Your answer ✓
+                        </span>
+                      )}
+                      {userChose && !a.isCorrect && (
+                        <span className="ml-auto text-[10px] font-bold text-red-500 bg-red-100 px-2 py-0.5 rounded-full shrink-0">
+                          Wrong ✗
+                        </span>
+                      )}
+                      {!userChose && a.isCorrect && (
+                        <span className="ml-auto text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">
                           Correct answer
                         </span>
                       )}
@@ -1694,7 +1776,6 @@ function InstructorQuizManager({
   const [, setDeleting] = useState(false);
 
   useEffect(() => {
-    // Use /Course/my-courses so instructors only see their own courses.
     api.getMyCourses(token).then(setCourses).catch(console.error);
   }, [token, user]);
 
@@ -1896,6 +1977,34 @@ function InstructorQuizManager({
 
 // ─── INSTRUCTOR: Results View ─────────────────────────────────────────────────
 
+interface QuizStats {
+  quizId: string;
+  totalAttempts: number;
+  passedCount: number;
+  failedCount: number;
+  averageScore: number;
+}
+
+interface StudentAttempt {
+  attemptId: string;
+  score: number;
+  passed: boolean;
+  attemptedAt: string;
+  answers: {
+    questionId: string;
+    questionText: string;
+    answerId: string;
+    answerText: string;
+    isCorrect: boolean;
+  }[];
+}
+
+interface StudentRecord {
+  studentId: string;
+  studentName: string;
+  attempts: StudentAttempt[];
+}
+
 function InstructorResults({
   quiz,
   token,
@@ -1905,29 +2014,24 @@ function InstructorResults({
   token: string;
   onBack: () => void;
 }) {
-  const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
-  const [questions, setQuestions] = useState<QuestionWithAnswers[]>([]);
+  const [stats, setStats] = useState<QuizStats | null>(null);
+  const [students, setStudents] = useState<StudentRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedAttempt, setExpandedAttempt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+  const [expandedAttempt, setExpandedAttempt] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        // No GET /QuizAttempt/quiz/{id} endpoint exists yet — attempts stay empty
-        // until the backend exposes a results endpoint.
-        const qs = await api.getQuestionsByQuiz(quiz.id, token);
-        const withAnswers = await Promise.all(
-          qs.map(async (q) => ({
-            ...q,
-            type: normalizeQuestionType(q.type),
-            answers: await api.getAnswersByQuestion(q.id, token),
-          })),
-        );
-        setAttempts([]);
-        setQuestions(withAnswers);
+        const [statsRes, studentsRes] = await Promise.all([
+          api.getQuizStats(quiz.id, token),
+          api.getQuizStudents(quiz.id, token),
+        ]);
+        setStats(statsRes);
+        setStudents(studentsRes.students ?? []);
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Failed");
+        setError(e instanceof Error ? e.message : "Failed to load results");
       } finally {
         setLoading(false);
       }
@@ -1935,12 +2039,6 @@ function InstructorResults({
   }, [quiz.id, token]);
 
   if (loading) return <Spinner />;
-
-  const passed = attempts.filter((a) => a.passed).length;
-  const avg =
-    attempts.length > 0
-      ? Math.round(attempts.reduce((s, a) => s + a.score, 0) / attempts.length)
-      : 0;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -1963,156 +2061,146 @@ function InstructorResults({
             {quiz.title} — Results
           </h2>
           <p className="text-xs text-[#9b8a7a] font-semibold mt-0.5">
-            {attempts.length} submission{attempts.length !== 1 ? "s" : ""}
+            {stats?.totalAttempts ?? 0} attempt{(stats?.totalAttempts ?? 0) !== 1 ? "s" : ""} · {students.length} student{students.length !== 1 ? "s" : ""}
           </p>
         </div>
       </div>
 
       {error && <Toast type="error" msg={error} />}
 
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      {/* Stats row */}
+      <div className="grid grid-cols-4 gap-3 mb-8">
         {[
-          { label: "Total Attempts", value: attempts.length, icon: "📝" },
-          {
-            label: "Pass Rate",
-            value: attempts.length
-              ? `${Math.round((passed / attempts.length) * 100)}%`
-              : "—",
-            icon: "✅",
-          },
-          {
-            label: "Avg Score",
-            value: attempts.length ? `${avg}%` : "—",
-            icon: "📈",
-          },
+          { label: "Total Attempts", value: stats?.totalAttempts ?? 0, icon: "📝" },
+          { label: "Passed", value: stats?.passedCount ?? 0, icon: "✅" },
+          { label: "Failed", value: stats?.failedCount ?? 0, icon: "❌" },
+          { label: "Avg Score", value: stats ? `${Math.round(stats.averageScore)}%` : "—", icon: "📈" },
         ].map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-white rounded-2xl border border-[#e8e0d8] p-5 text-center"
-          >
-            <div className="text-2xl mb-1">{stat.icon}</div>
-            <div className="text-2xl font-black text-[#1a1108]">
-              {stat.value}
-            </div>
-            <div className="text-xs text-[#9b8a7a] font-semibold mt-0.5">
-              {stat.label}
-            </div>
+          <div key={stat.label} className="bg-white rounded-2xl border border-[#e8e0d8] p-4 text-center">
+            <div className="text-xl mb-1">{stat.icon}</div>
+            <div className="text-xl font-black text-[#1a1108]">{stat.value}</div>
+            <div className="text-[10px] text-[#9b8a7a] font-semibold mt-0.5 uppercase tracking-wider">{stat.label}</div>
           </div>
         ))}
       </div>
 
-      {attempts.length === 0 ? (
+      {students.length === 0 ? (
         <Empty icon="📭" msg="No student submissions yet." />
       ) : (
         <div className="space-y-3">
-          {attempts.map((attempt) => (
-            <div
-              key={attempt.id}
-              className="bg-white rounded-2xl border border-[#e8e0d8] overflow-hidden"
-            >
-              <div
-                className="flex items-center gap-4 p-5 cursor-pointer hover:bg-[#fdf9f6] transition-colors"
-                onClick={() =>
-                  setExpandedAttempt(
-                    expandedAttempt === attempt.id ? null : attempt.id,
-                  )
-                }
-              >
+          {students.map((student) => {
+            const best = student.attempts.reduce((b, a) => a.score > b.score ? a : b, student.attempts[0]);
+            const isExpanded = expandedStudent === student.studentId;
+            return (
+              <div key={student.studentId} className="bg-white rounded-2xl border border-[#e8e0d8] overflow-hidden">
+                {/* Student row */}
                 <div
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0
-                  ${attempt.passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
+                  className="flex items-center gap-4 p-5 cursor-pointer hover:bg-[#fdf9f6] transition-colors"
+                  onClick={() => setExpandedStudent(isExpanded ? null : student.studentId)}
                 >
-                  {attempt.score}%
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0
+                    ${best.passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                    {best.score}%
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-[#1a1108] text-sm">{student.studentName}</p>
+                    <p className="text-xs text-[#9b8a7a]">
+                      {student.attempts.length} attempt{student.attempts.length !== 1 ? "s" : ""} · Best: {best.score}%
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs font-black px-2.5 py-1 rounded-full
+                      ${best.passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                      {best.passed ? "PASSED" : "FAILED"}
+                    </span>
+                    <span className="text-[#9b8a7a] text-xs">{isExpanded ? "▲" : "▼"}</span>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-[#1a1108] text-sm">
-                    {attempt.userName ?? attempt.userId}
-                  </p>
-                  <p className="text-xs text-[#9b8a7a]">
-                    {new Date(attempt.submittedAt).toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`text-xs font-black px-2.5 py-1 rounded-full ${attempt.passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
-                  >
-                    {attempt.passed ? "PASSED" : "FAILED"}
-                  </span>
-                  <span className="text-[#9b8a7a] text-xs">
-                    {expandedAttempt === attempt.id ? "▲" : "▼"}
-                  </span>
-                </div>
-              </div>
 
-              {expandedAttempt === attempt.id && (
-                <div className="border-t border-[#f0ebe4] px-5 py-4 bg-[#fdf9f6] space-y-3">
-                  {questions.map((q, idx) => {
-                    const userAnswerIds: string[] =
-                      (
-                        attempt.answers as {
-                          questionId: string;
-                          answerId: string[];
-                        }[]
-                      ).find((a) => a.questionId === q.id)?.answerId ?? [];
-                    const correctIds = q.answers
-                      .filter((a) => a.isCorrect)
-                      .map((a) => a.id);
-                    const isCorrect =
-                      correctIds.length === userAnswerIds.length &&
-                      correctIds.every((id) => userAnswerIds.includes(id));
-                    return (
-                      <div
-                        key={q.id}
-                        className={`rounded-xl border p-4 ${isCorrect ? "border-emerald-200 bg-emerald-50/50" : "border-red-200 bg-red-50/50"}`}
-                      >
-                        <div className="flex items-start gap-2 mb-2">
-                          <span className="text-sm">
-                            {isCorrect ? "✅" : "❌"}
-                          </span>
-                          <p className="text-sm font-bold text-[#1a1108] flex-1">
-                            <span className="text-[#9b8a7a] font-normal">
-                              Q{idx + 1}:{" "}
-                            </span>
-                            {q.text}
-                          </p>
-                          <span className="text-xs font-bold text-[#9b8a7a] shrink-0">
-                            {isCorrect ? q.points : 0}/{q.points} pts
-                          </span>
-                        </div>
-                        <div className="space-y-1 ml-6">
-                          {q.answers.map((a) => {
-                            const userChose = userAnswerIds.includes(a.id);
-                            let cls = "text-[#9b8a7a]";
-                            if (a.isCorrect && userChose)
-                              cls = "text-emerald-700 font-semibold";
-                            else if (a.isCorrect) cls = "text-emerald-600";
-                            else if (userChose)
-                              cls = "text-red-600 line-through";
-                            return (
-                              <div
-                                key={a.id}
-                                className={`flex items-center gap-2 text-xs ${cls}`}
-                              >
-                                <span>
-                                  {a.isCorrect ? "✓" : userChose ? "✗" : "○"}
-                                </span>
-                                <span>{a.text}</span>
-                                {userChose && !a.isCorrect && (
-                                  <span className="text-[10px] font-bold text-red-500">
-                                    (student's answer)
-                                  </span>
-                                )}
+                {/* Expanded: list of attempts */}
+                {isExpanded && (
+                  <div className="border-t border-[#f0ebe4] bg-[#fdf9f6]">
+                    {student.attempts
+                      .slice()
+                      .sort((a, b) => new Date(b.attemptedAt).getTime() - new Date(a.attemptedAt).getTime())
+                      .map((attempt, ai) => {
+                        const attemptExpanded = expandedAttempt === attempt.attemptId;
+                        // Group answers by question
+                        const qMap = new Map<string, { text: string; answers: typeof attempt.answers }>();
+                        for (const row of attempt.answers) {
+                          if (!qMap.has(row.questionId)) qMap.set(row.questionId, { text: row.questionText, answers: [] });
+                          qMap.get(row.questionId)!.answers.push(row);
+                        }
+                        return (
+                          <div key={attempt.attemptId} className="border-b border-[#f0ebe4] last:border-b-0">
+                            {/* Attempt header */}
+                            <div
+                              className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-[#f7f2ee] transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedAttempt(attemptExpanded ? null : attempt.attemptId);
+                              }}
+                            >
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0
+                                ${attempt.passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                                {attempt.score}%
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
+                              <div className="flex-1">
+                                <span className="text-xs font-bold text-[#5c4c3d]">
+                                  Attempt {ai + 1}
+                                </span>
+                                <span className="text-xs text-[#9b8a7a] ml-2">
+                                  {new Date(attempt.attemptedAt).toLocaleString()}
+                                </span>
+                              </div>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full
+                                ${attempt.passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                                {attempt.passed ? "PASSED" : "FAILED"}
+                              </span>
+                              <span className="text-[#9b8a7a] text-xs ml-1">{attemptExpanded ? "▲" : "▼"}</span>
+                            </div>
+
+                            {/* Per-question breakdown */}
+                            {attemptExpanded && (
+                              <div className="px-5 pb-4 space-y-3">
+                                {Array.from(qMap.entries()).map(([qId, q], idx) => {
+                                  const allCorrect = q.answers.every((a) => a.isCorrect);
+                                  return (
+                                    <div key={qId}
+                                      className={`rounded-xl border p-4 ${allCorrect ? "border-emerald-200 bg-emerald-50/50" : "border-red-200 bg-red-50/50"}`}>
+                                      <div className="flex items-start gap-2 mb-2">
+                                        <span className="text-sm shrink-0">{allCorrect ? "✅" : "❌"}</span>
+                                        <p className="text-sm font-bold text-[#1a1108] flex-1">
+                                          <span className="text-[#9b8a7a] font-normal">Q{idx + 1}: </span>
+                                          {q.text}
+                                        </p>
+                                      </div>
+                                      <div className="space-y-1 ml-6">
+                                        {q.answers.map((a) => (
+                                          <div key={a.answerId}
+                                            className={`flex items-center gap-2 text-xs
+                                            ${a.isCorrect ? "text-emerald-700 font-semibold" : "text-red-600"}`}>
+                                            <span>{a.isCorrect ? "✓" : "✗"}</span>
+                                            <span>{a.answerText}</span>
+                                            {!a.isCorrect && (
+                                              <span className="text-[10px] font-bold text-red-400">(wrong)</span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
