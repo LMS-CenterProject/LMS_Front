@@ -1087,7 +1087,7 @@ async function buildResultFromAttemptRecord(
 
   // Step 2 — fetch full answer list for every question in parallel
   const questions: QuestionWithAnswers[] = await Promise.all(
-    Array.from(chosenMap.entries()).map(async ([qId, q], idx) => {
+    Array.from(chosenMap.entries()).map(async ([qId, q]) => {
       let allAnswers: Answer[] = [];
       try {
         allAnswers = await api.getAnswersByQuestion(qId, token);
